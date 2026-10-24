@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
-from collatrix.optimizer import ASSETS, AllocationError, compare_allocations
+from collatrix.optimizer import ASSETS, AllocationError, compare_allocations, false_shortfall_scenario
 from collatrix.stress import run_stress_test
 
 
@@ -29,6 +33,7 @@ class AllocationLine(StrictModel):
     quantity: int
     credited_value_cents: int
     funding_cost_cents: int
+    explanation: str
 
 
 class ObligationAllocation(StrictModel):
@@ -47,6 +52,15 @@ class AllocationPlan(StrictModel):
     asset_usage: dict[str, int]
 
 
+class FalseShortfallScenario(StrictModel):
+    optimized_feasible: bool
+    optimized: AllocationPlan
+    greedy_feasible: bool
+    greedy: AllocationPlan | None = None
+    greedy_shortfall_cents: int
+    explanation: str
+
+
 class OptimizationResponse(StrictModel):
     mode: str
     currency: str
@@ -56,6 +70,7 @@ class OptimizationResponse(StrictModel):
     greedy: AllocationPlan
     savings_cents: int
     savings_bps: int
+    false_shortfall_scenario: FalseShortfallScenario
 
 
 class StressRequest(StrictModel):
@@ -96,6 +111,16 @@ class DashboardResponse(OptimizationResponse):
     stress: StressResponse
 
 
+class DeploymentResponse(StrictModel):
+    chain_id: int
+    network: str
+    address: str
+    pledgor: str
+    counterparty: str
+    configuration_version: str
+    abi: list[dict[str, Any]]
+
+
 class ErrorDetail(StrictModel):
     code: str
     message: str
@@ -114,10 +139,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_methods=["GET"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
+
+DEPLOYMENT_PATH = Path(__file__).resolve().parents[1] / "chain" / "deployments" / "local.json"
 
 
 @app.exception_handler(AllocationError)
@@ -181,6 +208,7 @@ def _optimization_response(comparison: dict) -> OptimizationResponse:
             )
             for asset in ASSETS
         ],
+        false_shortfall_scenario=FalseShortfallScenario(**false_shortfall_scenario()),
         **comparison,
     )
 
@@ -208,3 +236,17 @@ def dashboard() -> DashboardResponse:
             **run_stress_test(comparison, {"CASH": 0, "UST": -1_500, "CORP": -2_500}),
         ),
     )
+
+
+@app.get("/api/v1/deployment", response_model=DeploymentResponse)
+def deployment() -> DeploymentResponse:
+    if not DEPLOYMENT_PATH.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail="Local reservation contract is not deployed. Run the documented local deployment command.",
+        )
+    try:
+        data = json.loads(DEPLOYMENT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="Local contract deployment metadata is unreadable.") from exc
+    return DeploymentResponse.model_validate(data)

@@ -50,6 +50,10 @@ OBLIGATIONS = (
 class AllocationError(ValueError):
     """Raised when eligible inventory cannot cover an obligation."""
 
+    def __init__(self, message: str, *, shortfall_cents: int | None = None) -> None:
+        super().__init__(message)
+        self.shortfall_cents = shortfall_cents
+
 
 def _summarize(
     quantities: dict[str, dict[str, int]],
@@ -84,6 +88,12 @@ def _summarize(
                         * quantity,
                         "funding_cost_cents": assets_by_symbol[symbol].unit_cost_cents
                         * quantity,
+                        "explanation": (
+                            f"Accepted for {obligation.name}; "
+                            f"{assets_by_symbol[symbol].credited_value_cents} cents credited per unit "
+                            f"after a {assets_by_symbol[symbol].haircut_bps} bps haircut, "
+                            "selected under shared-inventory cost minimization."
+                        ),
                     }
                     for symbol, quantity in sorted(allocation.items())
                     if quantity
@@ -110,13 +120,25 @@ def _validate_inputs(assets: tuple[Asset, ...], obligations: tuple[Obligation, .
         raise ValueError("Asset symbols and obligation IDs must be unique.")
     for asset in assets:
         if (
-            asset.unit_value_cents < 0
+            any(
+                type(value) is not int
+                for value in (
+                    asset.unit_value_cents,
+                    asset.haircut_bps,
+                    asset.unit_cost_cents,
+                    asset.inventory,
+                )
+            )
+            or asset.unit_value_cents < 0
             or asset.unit_cost_cents < 0
             or asset.inventory < 0
             or not 0 <= asset.haircut_bps < BASIS_POINTS
         ):
             raise ValueError(f"Invalid financial inputs for asset {asset.symbol}.")
-    if any(obligation.requirement_cents <= 0 for obligation in obligations):
+    if any(
+        type(obligation.requirement_cents) is not int or obligation.requirement_cents <= 0
+        for obligation in obligations
+    ):
         raise ValueError("Obligation requirements must be positive integer cents.")
 
 
@@ -226,7 +248,8 @@ def greedy_allocation(
                 break
         if remaining_value > 0:
             raise AllocationError(
-                f"Greedy baseline cannot cover {obligation.name} with remaining eligible inventory."
+                f"Greedy baseline cannot cover {obligation.name} with remaining eligible inventory.",
+                shortfall_cents=remaining_value,
             )
 
     return _summarize(quantities, assets, obligations)
@@ -243,4 +266,39 @@ def compare_allocations() -> dict:
         "greedy": greedy,
         "savings_cents": savings_cents,
         "savings_bps": savings_bps,
+    }
+
+
+def false_shortfall_scenario() -> dict:
+    assets = (
+        Asset("CASH", 1_000, 0, 1, 100, ("FS-001", "FS-002")),
+        Asset("UST", 1_000, 200, 2, 80, ("FS-001",)),
+        Asset("CORP", 1_000, 500, 8, 0, ("FS-002",)),
+    )
+    obligations = (
+        Obligation("FS-001", "Clearing obligation", 100_000),
+        Obligation("FS-002", "Derivatives margin", 78_000),
+    )
+    optimized = optimize_allocation(assets, obligations)
+    try:
+        greedy = greedy_allocation(assets, obligations)
+    except AllocationError as exc:
+        return {
+            "optimized_feasible": True,
+            "optimized": optimized,
+            "greedy_feasible": False,
+            "greedy_shortfall_cents": exc.shortfall_cents,
+            "explanation": (
+                "The sequential greedy baseline uses all shared CASH on the first obligation and "
+                "reports a shortfall on the second. Reallocating eligible UST to the first obligation "
+                "leaves enough CASH to cover both, so the greedy shortfall is false."
+            ),
+        }
+    return {
+        "optimized_feasible": True,
+        "optimized": optimized,
+        "greedy_feasible": True,
+        "greedy": greedy,
+        "greedy_shortfall_cents": 0,
+        "explanation": "The greedy baseline covered both obligations in this scenario.",
     }

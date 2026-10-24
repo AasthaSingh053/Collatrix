@@ -19,6 +19,15 @@ def run_stress_test(
     assets: tuple[Asset, ...] = ASSETS,
     obligations: tuple[Obligation, ...] = OBLIGATIONS,
 ) -> dict:
+    known_symbols = {asset.symbol for asset in assets}
+    if set(shocks_bps) - known_symbols:
+        raise ValueError("Price shocks must reference only configured assets.")
+    if any(
+        type(shock) is not int or shock < -BASIS_POINTS or shock > 5 * BASIS_POINTS
+        for shock in shocks_bps.values()
+    ):
+        raise ValueError("Price shocks must be integer basis points between -10000 and 50000.")
+
     assets_by_symbol = {asset.symbol: asset for asset in assets}
     optimized_by_id = {item["id"]: item for item in comparison["optimized"]["obligations"]}
     used = comparison["optimized"]["asset_usage"]

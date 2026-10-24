@@ -5,7 +5,8 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "node": "hardhat node",
-    "deploy:local": "hardhat run scripts/deploy.js --network localhost"
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "test:e2e": "hardhat run scripts/e2e-local.js --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.1.0",

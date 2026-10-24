@@ -16,9 +16,12 @@
 
 - `GET /api/health`: process health and simulation label.
 - `GET /api/v1/optimize`: typed optimized and greedy allocations in cents.
-- `GET /api/v1/dashboard`: allocation and default deterministic stress results.
+- `GET /api/v1/dashboard`: allocation, counterfactual greedy false-shortfall scenario,
+  and default deterministic stress results.
 - `POST /api/v1/stress`: accepts `{"shocks_bps":{"UST":-1500}}`.
 - API validation and infeasibility errors use an `error` object with a stable
   code and message. Infeasible allocation returns HTTP 409.
+- Each allocated line includes an explanation of eligibility, credited unit
+  value, haircut, and shared-inventory cost minimization.
 
 Run tests from this directory with `python -m unittest discover -s tests -v`.

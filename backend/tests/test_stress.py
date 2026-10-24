@@ -1,6 +1,6 @@
 import unittest
 
-from collatrix.optimizer import compare_allocations
+from collatrix.optimizer import Asset, Obligation, compare_allocations, optimize_allocation
 from collatrix.stress import run_stress_test
 
 
@@ -35,6 +35,21 @@ class StressTests(unittest.TestCase):
         self.assertGreater(result["total_shortfall_cents"], 0)
         self.assertFalse(result["top_up_feasible"])
         self.assertIsNone(result["top_up_cost_cents"])
+
+    def test_shocked_price_and_haircut_use_conservative_integer_rounding(self):
+        assets = (Asset("ROUND", 1_001, 0, 1, 3, ("A",)),)
+        obligations = (Obligation("A", "Rounding obligation", 1_001),)
+        comparison = {"optimized": optimize_allocation(assets, obligations)}
+        result = run_stress_test(comparison, {"ROUND": -1}, assets, obligations)
+        self.assertEqual(result["obligations"][0]["stressed_collateral_cents"], 1_000)
+        self.assertEqual(result["obligations"][0]["shortfall_cents"], 1)
+        self.assertEqual(result["top_up_cost_cents"], 1)
+
+    def test_fractional_or_unconfigured_shocks_are_rejected(self):
+        with self.assertRaises(ValueError):
+            run_stress_test(compare_allocations(), {"UST": -0.5})
+        with self.assertRaises(ValueError):
+            run_stress_test(compare_allocations(), {"UNKNOWN": -1})
 
 
 if __name__ == "__main__":

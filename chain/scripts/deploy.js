@@ -3,7 +3,7 @@ const path = require("node:path");
 const { ethers, artifacts } = require("hardhat");
 
 async function main() {
-  const [owner, counterparty] = await ethers.getSigners();
+  const [pledgor, counterparty] = await ethers.getSigners();
   const factory = await ethers.getContractFactory("CollatrixReservations");
   const contract = await factory.deploy(counterparty.address);
   await contract.waitForDeployment();
@@ -41,21 +41,13 @@ async function main() {
   const block = await ethers.provider.getBlock("latest");
   for (const obligation of obligations) {
     await (
-      await contract.configureObligation(
+      await contract.connect(counterparty).createObligation(
         ethers.encodeBytes32String(obligation.id),
         obligation.requirementCents,
-        block.timestamp + obligation.expirySeconds
+        block.timestamp + obligation.expirySeconds,
+        obligation.eligible.map((asset) => ethers.encodeBytes32String(asset))
       )
     ).wait();
-    for (const asset of assets) {
-      await (
-        await contract.configureEligibility(
-          ethers.encodeBytes32String(obligation.id),
-          ethers.encodeBytes32String(asset.symbol),
-          obligation.eligible.includes(asset.symbol)
-        )
-      ).wait();
-    }
   }
 
   const artifact = await artifacts.readArtifact("CollatrixReservations");
@@ -63,7 +55,7 @@ async function main() {
     chain_id: 31337,
     network: "local Hardhat simulation",
     address: await contract.getAddress(),
-    owner: owner.address,
+    pledgor: pledgor.address,
     counterparty: counterparty.address,
     configuration_version: String(await contract.configurationVersion()),
     abi: artifact.abi,

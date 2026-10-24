@@ -8,6 +8,7 @@ from collatrix.optimizer import (
     Asset,
     Obligation,
     compare_allocations,
+    false_shortfall_scenario,
     greedy_allocation,
     optimize_allocation,
 )
@@ -92,6 +93,30 @@ class AllocationTests(unittest.TestCase):
                     obligation["credited_collateral_cents"],
                     obligation["requirement_cents"],
                 )
+                for line in obligation["allocations"]:
+                    self.assertTrue(line["explanation"])
+
+    def test_false_shortfall_scenario_has_a_feasible_global_reallocation(self):
+        scenario = false_shortfall_scenario()
+        best_independent_cost = None
+        for cash_a in range(101):
+            for cash_b in range(101 - cash_a):
+                ust = max(0, (100_000 - cash_a * 1_000 + 979) // 980)
+                if ust <= 80 and cash_b * 1_000 >= 78_000:
+                    cost = cash_a + cash_b + 2 * ust
+                    best_independent_cost = (
+                        cost if best_independent_cost is None else min(best_independent_cost, cost)
+                    )
+
+        self.assertEqual(best_independent_cost, 260)
+        self.assertTrue(scenario["optimized_feasible"])
+        self.assertEqual(scenario["optimized"]["total_funding_cost_cents"], best_independent_cost)
+        self.assertFalse(scenario["greedy_feasible"])
+        self.assertEqual(scenario["greedy_shortfall_cents"], 78_000)
+        self.assertEqual(
+            scenario["optimized"]["asset_usage"],
+            {"CASH": 100, "CORP": 0, "UST": 80},
+        )
 
     def test_infeasible_inventory_and_invalid_asset_inputs_are_rejected(self):
         assets = (Asset("CASH", 1_000, 0, 1, 1, ("A",)),)
@@ -102,6 +127,10 @@ class AllocationTests(unittest.TestCase):
             greedy_allocation(assets, obligations)
         with self.assertRaises(ValueError):
             optimize_allocation((Asset("BAD", 100, BASIS_POINTS, 1, 2, ("A",)),), obligations)
+        with self.assertRaises(ValueError):
+            optimize_allocation((Asset("FLOAT", 1_000.5, 0, 1, 2, ("A",)),), obligations)
+        with self.assertRaises(ValueError):
+            optimize_allocation(assets, (Obligation("A", "Float requirement", 1.5),))
 
 
 if __name__ == "__main__":

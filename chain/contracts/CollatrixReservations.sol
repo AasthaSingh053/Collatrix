@@ -6,7 +6,7 @@ contract CollatrixReservations {
     uint256 public constant MAX_PRICE_AGE_SECONDS = 300;
     uint256 public constant MAX_BATCH_ASSETS = 16;
 
-    address public immutable owner;
+    address public immutable pledgor;
     address public immutable counterparty;
     uint256 public configurationVersion;
 
@@ -63,8 +63,8 @@ contract CollatrixReservations {
     event ReservationReleased(bytes32 indexed reservationId);
     event ReservationExpired(bytes32 indexed reservationId);
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "only owner");
+    modifier onlyPledger() {
+        require(msg.sender == pledgor, "only pledgor");
         _;
     }
 
@@ -75,7 +75,7 @@ contract CollatrixReservations {
 
     constructor(address counterpartyAddress) {
         require(counterpartyAddress != address(0), "invalid counterparty");
-        owner = msg.sender;
+        pledgor = msg.sender;
         counterparty = counterpartyAddress;
     }
 
@@ -84,7 +84,7 @@ contract CollatrixReservations {
         uint256 inventory,
         uint256 priceCents,
         uint16 haircutBps
-    ) external onlyOwner {
+    ) external onlyPledger {
         AssetState storage asset = assets[assetId];
         require(inventory >= asset.reserved, "inventory below reserved");
         require(priceCents > 0, "price must be positive");
@@ -98,24 +98,29 @@ contract CollatrixReservations {
         emit AssetConfigured(assetId, inventory, priceCents, haircutBps);
     }
 
-    function configureObligation(
+    function createObligation(
         bytes32 obligationId,
         uint256 requirementCents,
-        uint64 expiresAt
-    ) external onlyOwner {
+        uint64 expiresAt,
+        bytes32[] calldata acceptedAssetIds
+    ) external onlyCounterparty {
+        require(!obligations[obligationId].enabled, "obligation already exists");
         require(requirementCents > 0, "requirement must be positive");
         require(expiresAt > block.timestamp, "expiry must be in future");
+        require(acceptedAssetIds.length > 0 && acceptedAssetIds.length <= MAX_BATCH_ASSETS, "invalid accepted assets");
+        for (uint256 i = 0; i < acceptedAssetIds.length; i++) {
+            require(assets[acceptedAssetIds[i]].enabled, "asset not configured");
+            for (uint256 j = 0; j < i; j++) {
+                require(acceptedAssetIds[i] != acceptedAssetIds[j], "duplicate accepted asset");
+            }
+        }
         obligations[obligationId] = ObligationState(requirementCents, expiresAt, true);
+        for (uint256 i = 0; i < acceptedAssetIds.length; i++) {
+            eligible[obligationId][acceptedAssetIds[i]] = true;
+            emit EligibilityConfigured(obligationId, acceptedAssetIds[i], true);
+        }
         _incrementVersion();
         emit ObligationConfigured(obligationId, requirementCents, expiresAt);
-    }
-
-    function configureEligibility(bytes32 obligationId, bytes32 assetId, bool allowed) external onlyOwner {
-        require(obligations[obligationId].enabled, "obligation not configured");
-        require(assets[assetId].enabled, "asset not configured");
-        eligible[obligationId][assetId] = allowed;
-        _incrementVersion();
-        emit EligibilityConfigured(obligationId, assetId, allowed);
     }
 
     function assetState(bytes32 assetId) external view returns (AssetState memory) {
@@ -136,7 +141,7 @@ contract CollatrixReservations {
         bytes32 obligationId,
         Allocation[] calldata allocations,
         uint256 expectedVersion
-    ) external onlyOwner {
+    ) external onlyPledger {
         require(reservations[reservationId].status == Status.Unknown, "duplicate reservation");
         require(activeReservationForObligation[obligationId] == bytes32(0), "obligation already reserved");
         require(expectedVersion == configurationVersion, "stale configuration");

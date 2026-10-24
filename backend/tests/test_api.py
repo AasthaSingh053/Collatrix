@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -25,6 +27,10 @@ class OptimizationApiTests(unittest.TestCase):
         self.assertEqual(body["savings_cents"], 194)
         self.assertEqual(body["savings_bps"], 4_778)
         self.assertEqual(body["optimized"]["asset_usage"], {"CASH": 150, "UST": 31, "CORP": 0})
+        self.assertTrue(body["false_shortfall_scenario"]["optimized_feasible"])
+        self.assertFalse(body["false_shortfall_scenario"]["greedy_feasible"])
+        self.assertEqual(body["false_shortfall_scenario"]["optimized"]["total_funding_cost_cents"], 260)
+        self.assertEqual(body["false_shortfall_scenario"]["greedy_shortfall_cents"], 78_000)
 
     def test_openapi_exposes_typed_response_contract(self):
         schema = self.client.get("/openapi.json").json()
@@ -64,6 +70,13 @@ class OptimizationApiTests(unittest.TestCase):
         self.assertEqual(body["optimized"]["total_funding_cost_cents"], 212)
         self.assertEqual(body["stress"]["mode"], "simulation")
         self.assertGreater(body["stress"]["total_shortfall_cents"], 0)
+
+    def test_missing_local_deployment_is_an_explicit_error(self):
+        missing_path = Path(__file__).with_name("deployment-that-does-not-exist.json")
+        with patch("main.DEPLOYMENT_PATH", missing_path):
+            response = self.client.get("/api/v1/deployment")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error"]["code"], "http_error")
 
 
 if __name__ == "__main__":
