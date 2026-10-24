@@ -372,10 +372,13 @@ export default function App() {
         if (!block) throw new Error("Unable to read the local chain clock.");
         const expiryId = encodeBytes32String(`EXP-${crypto.randomUUID().slice(0, 25)}`);
         const acceptedAsset = encodeBytes32String("CASH");
+        const expiryTimestamp = Math.max(block.timestamp, Math.floor(Date.now() / 1_000)) + 60;
         const createTx = await new Contract(deployment.address, deployment.abi, counterparty)
-          .createObligation(expiryId, 1_000, block.timestamp + 5, [acceptedAsset]);
+          .createObligation(expiryId, 1_000, expiryTimestamp, [acceptedAsset]);
         await createTx.wait();
-        await provider.send("evm_increaseTime", [6]);
+        const createdBlock = await provider.getBlock("latest");
+        if (!createdBlock) throw new Error("Unable to read the local chain after creating the expiry check.");
+        await provider.send("evm_increaseTime", [Math.max(1, expiryTimestamp - createdBlock.timestamp + 1)]);
         await provider.send("evm_mine", []);
         try {
           await pledgorContract.reserveBatch.staticCall(
