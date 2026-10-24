@@ -311,6 +311,8 @@ export default function App() {
   const [newObligationName, setNewObligationName] = useState("Repo Collateral Pledge");
   const [newObligationDollars, setNewObligationDollars] = useState(500);
   const [newAcceptedAssets, setNewAcceptedAssets] = useState<string[]>(["CASH", "UST"]);
+  const [activeNav, setActiveNav] = useState("dashboard");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const appendActivity = useCallback((item: Activity) => {
     setActivity((current) => [item, ...current].slice(0, 16));
@@ -923,584 +925,780 @@ export default function App() {
     }
   }
 
+  const scrollToSection = (id: string, navKey: string) => {
+    setActiveNav(navKey);
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  const filteredAllocationRows = useMemo(() => {
+    if (!searchQuery.trim()) return allocationRows;
+    const q = searchQuery.toLowerCase();
+    return allocationRows.filter(
+      (ob) =>
+        ob.id.toLowerCase().includes(q) ||
+        ob.name.toLowerCase().includes(q) ||
+        ob.allocations.some((a) => a.asset.toLowerCase().includes(q)),
+    );
+  }, [allocationRows, searchQuery]);
+
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="/" aria-label="Collatrix home">
-          <span className="brand-mark">C</span>
-          <span>collatrix<span className="brand-period">.</span></span>
-        </a>
-        <div className="topbar-right">
-          <span className={`status-badge ${apiConnected === false ? "simulated" : "online"}`}>
-            <span className="pulse-dot" />
-            {apiConnected === false ? "LOCAL ENGINE" : "API ONLINE"}
-          </span>
-          <label className="role-select-label">
-            <span className="sr-only">Local demo role</span>
+    <div className="saas-layout">
+      {/* 1. Modern Left Sidebar Navigation */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <a className="brand-link" href="/" aria-label="Collatrix Home">
+            <span className="brand-icon-wrap">C</span>
+            <span>collatrix<span className="brand-period">.</span></span>
+          </a>
+        </div>
+
+        <nav className="sidebar-nav">
+          <div className="nav-group">
+            <div className="nav-group-title">MAIN MENU</div>
+            <button
+              type="button"
+              className={`nav-item ${activeNav === "dashboard" ? "active" : ""}`}
+              onClick={() => scrollToSection("dashboard-top", "dashboard")}
+            >
+              <span className="nav-icon">⊞</span>
+              <span>Overview</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-item ${activeNav === "allocations" ? "active" : ""}`}
+              onClick={() => scrollToSection("allocations-section", "allocations")}
+            >
+              <span className="nav-icon">▤</span>
+              <span>Allocations</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-item ${activeNav === "capital" ? "active" : ""}`}
+              onClick={() => scrollToSection("capital-flow-section", "capital")}
+            >
+              <span className="nav-icon">↗</span>
+              <span>Capital Flow</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-item ${activeNav === "stress" ? "active" : ""}`}
+              onClick={() => scrollToSection("risk-stress-section", "stress")}
+            >
+              <span className="nav-icon">⌁</span>
+              <span>Risk & Stress</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-item ${activeNav === "guardrails" ? "active" : ""}`}
+              onClick={() => scrollToSection("guardrails-section", "guardrails")}
+            >
+              <span className="nav-icon">🛡</span>
+              <span>Guardrails</span>
+            </button>
+            <button
+              type="button"
+              className={`nav-item ${activeNav === "audit" ? "active" : ""}`}
+              onClick={() => scrollToSection("audit-section", "audit")}
+            >
+              <span className="nav-icon">⏱</span>
+              <span>Audit Trail</span>
+            </button>
+          </div>
+
+          <div className="nav-group secondary">
+            <div className="nav-group-title">EVM ENVIRONMENT</div>
+            <div className="sidebar-node-status">
+              <div className="node-status-row">
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: chainConnected ? "var(--green)" : "var(--amber)",
+                    boxShadow: chainConnected ? "0 0 6px rgba(16, 185, 129, 0.5)" : "none",
+                  }}
+                />
+                <span>{chainConnected ? "Hardhat Node (31337)" : "Local Simulation"}</span>
+              </div>
+              <span className="node-status-sub">Chain ID: 31337</span>
+            </div>
+          </div>
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="sidebar-role-card">
+            <span className="role-eyebrow">DEMO SIGNER ROLE</span>
             <select
               aria-label="Local demo role"
+              className="sidebar-role-select"
               value={localRole}
               onChange={(event) => void switchRole(event.target.value as "pledgor" | "counterparty")}
             >
               <option value="pledgor">Role: Pledgor (Reserves)</option>
               <option value="counterparty">Role: Counterparty (Releases)</option>
             </select>
-          </label>
-          <button className="wallet-button" onClick={openWalletModal} title={walletAddress ? "Connected. Click to switch or disconnect wallet" : "Click to connect wallet"}>
-            <span className="wallet-icon">◈</span>
-            {walletAddress
-              ? `${shortAddress(walletAddress)} (${signingMode === "wallet" ? "MetaMask" : connectedLocalRole || localRole})`
-              : "Connect wallet"}
-          </button>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <main className="page-content">
-        <section className="page-heading">
-          <div>
-            <div className="eyebrow">COLLATERAL OPERATIONS <span>/</span> DYNAMIC OPTIMIZATION DESK</div>
-            <h1>Collateral desk</h1>
-            <p className="page-subtitle">Real-time whole-unit optimization, interactive market stress, and verifiable atomic reservations.</p>
+      {/* 2. Main Workspace Layout */}
+      <div className="main-wrapper">
+        {/* Top Header & Action Bar */}
+        <header className="saas-header">
+          <div className="header-breadcrumbs">
+            <span>COLLATRIX</span>
+            <span className="crumb-sep">/</span>
+            <span>OPERATIONS</span>
+            <span className="crumb-sep">/</span>
+            <span className="crumb-current">DYNAMIC OPTIMIZATION DESK</span>
           </div>
-          <button className="refresh-button" onClick={() => void refreshDashboard()} disabled={refreshing}>
-            <span className={refreshing ? "refresh-symbol spinning" : "refresh-symbol"}>↻</span>
-            {refreshing ? "Calculating" : "Re-Optimize"}
-          </button>
-        </section>
 
-        {/* Dynamic Workbench Toolbar */}
-        <section className="interactive-toolbar">
-          <div className="toolbar-actions">
-            <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
-              + Create Obligation (Counterparty)
-            </button>
-            <button className="btn-secondary" onClick={loadPdfBenchmarkCase} title="Load PDF Section 7 Case 1 benchmark ($250k obligation)">
-              Load PDF Benchmark ($250k)
-            </button>
-            <button className="btn-secondary" onClick={resetToDefaultScenario} title="Reset to default 2 obligations">
-              Reset Default Portfolio (2 Obs)
-            </button>
-            <button className="btn-secondary" onClick={() => void runOptimization(requirementsState)}>
-              Recalculate Optimizer
-            </button>
+          <div className="header-center">
+            <div className="search-pill">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                placeholder="Search obligations, assets, counterparties..."
+                className="search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="toolbar-status">
-            <span className={`status-badge ${chainConnected ? "online" : "simulated"}`}>
-              {chainConnected ? "Hardhat Node (31337) Online" : "Local Simulation Mode"}
+
+          <div className="header-right">
+            <span className={`status-badge-pill ${apiConnected === false ? "sim" : "online"}`}>
+              <span className="badge-pulse" />
+              {apiConnected === false ? "LOCAL ENGINE" : "API ONLINE"}
             </span>
-          </div>
-        </section>
 
-        {actionError && (
-          <section className="notice-stack" aria-live="polite">
-            <div className="notice warning">
-              <strong>Action Notice</strong>
-              <span>{actionError}</span>
+            <button
+              className="wallet-pill-button"
+              onClick={openWalletModal}
+              title={walletAddress ? "Connected. Click to switch or disconnect wallet" : "Click to connect wallet"}
+            >
+              <span className="wallet-dot" />
+              <span>{walletAddress ? shortAddress(walletAddress) : "Connect wallet"}</span>
+              <span className="wallet-mode-tag">
+                {walletAddress
+                  ? (signingMode === "wallet" ? "MetaMask" : connectedLocalRole || localRole)
+                  : "Web3"}
+              </span>
+            </button>
+
+            <div className="user-profile-avatar" title="Desk Trader / Risk Manager">
+              <span>RM</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Dashboard Body */}
+        <main className="dashboard-body" id="dashboard-top">
+          {/* Hero Welcome Banner */}
+          <section className="hero-header">
+            <div className="hero-title-group">
+              <h1>Collateral Desk Overview</h1>
+              <p className="hero-subtitle">
+                Real-time whole-unit integer optimization, verifiable EVM atomic settlement, and market stress risk simulation.
+              </p>
+            </div>
+
+            <div className="hero-actions">
+              <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
+                + Create Obligation (Counterparty)
+              </button>
+              <button className="btn-secondary" onClick={loadPdfBenchmarkCase} title="Load PDF Section 7 Case 1 benchmark ($250k obligation)">
+                Load PDF Benchmark ($250k)
+              </button>
+              <button className="btn-secondary" onClick={resetToDefaultScenario} title="Reset to default 2 obligations">
+                Reset Portfolio (2 Obs)
+              </button>
+              <button className="btn-secondary" onClick={() => void runOptimization(requirementsState)} disabled={refreshing}>
+                <span className={refreshing ? "refresh-spin spinning" : "refresh-spin"}>↻</span>
+                {refreshing ? "Calculating…" : "Re-Optimize"}
+              </button>
             </div>
           </section>
-        )}
 
-        <section className="metrics-grid" aria-label="Portfolio summary">
-          <article className="metric-card">
-            <div className="metric-label">OPTIMIZED FUNDING COST <span className="metric-icon">↘</span></div>
-            <div className="metric-value">{loading ? "…" : dollars(dashboard?.optimized.total_funding_cost_cents)}</div>
-            <div className="metric-foot">Integer-cent global solver</div>
-          </article>
-          <article className="metric-card">
-            <div className="metric-label">SAVINGS VS. GREEDY <span className="metric-icon green">✳</span></div>
-            <div className="metric-value green">{loading ? "…" : dollars(dashboard?.savings_cents)}</div>
-            <div className="metric-foot">
-              {dashboard ? `${savingsPercent}% · calculated across obligations` : "Comparison pending"}
-            </div>
-          </article>
-          <article className="metric-card">
-            <div className="metric-label">ACTIVE OBLIGATIONS <span className="metric-icon">▤</span></div>
-            <div className="metric-value">{loading ? "…" : dashboard?.optimized.obligations.length ?? "—"}</div>
-            <div className="metric-foot">Multi-obligation portfolio</div>
-          </article>
-          <article className="metric-card">
-            <div className="metric-label">STRESS SHORTFALL <span className="metric-icon amber">⌁</span></div>
-            <div className="metric-value">{stress ? dollars(stress.total_shortfall_cents) : "—"}</div>
-            <div className="metric-foot">Under -{stressDropPercent}% market shock</div>
-          </article>
-        </section>
-
-        {/* Chart 1: "Where the money goes" - Stacked bar chart, 2 bars (First-come, Collatrix), stacked by asset funding cost */}
-        <section className="chart-row-full" aria-label="Where the money goes">
-          <WhereMoneyGoesChart dashboard={dashboard} />
-        </section>
-
-        <section className="allocation-section-grid">
-          <article className="panel allocation-panel">
-            <div className="panel-heading">
-              <div>
-                <div className="section-kicker">OPTIMIZATION OUTPUT</div>
-                <h2>Recommended allocation</h2>
+          {actionError && (
+            <section className="notice-stack" aria-live="polite">
+              <div className="notice warning">
+                <strong>Action Notice:</strong>
+                <span>{actionError}</span>
               </div>
-              <span className="live-tag"><span />DYNAMIC SOLVER</span>
-            </div>
-            {allocationRows.length === 0 ? (
-              <div className="empty-state">No allocation is available.</div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>OBLIGATION</th>
-                      <th>REQUIREMENT (EDITABLE)</th>
-                      <th>ALLOCATED COLLATERAL</th>
-                      <th>FUNDING COST</th>
-                      <th>ON-CHAIN RESERVATION</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allocationRows.map((obligation) => {
-                      const chainState = reservations[obligation.id];
-                      const isActive = chainState?.status === "active";
-                      const isExpired =
-                        isActive &&
-                        chainState.expiresAt !== undefined &&
-                        chainState.expiresAt <= Math.floor(Date.now() / 1000);
-                      const pending = pendingObligation === obligation.id;
-                      return (
-                        <tr key={obligation.id}>
-                          <td>
-                            <span className="obligation-name">{obligation.name}</span>
-                            <span className="table-subtext">{obligation.id}</span>
-                            <span className="table-subtext">
-                              Accepted: {dashboard?.assets
-                                .filter((asset) => asset.eligible_obligations.includes(obligation.id))
-                                .map((asset) => asset.symbol)
-                                .join(" · ") || "none"}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="obligation-edit-row">
-                              <span>$</span>
-                              <input
-                                type="number"
-                                className="amount-input"
-                                value={requirementsState[obligation.id] ?? (obligation.requirement_cents / 100)}
-                                onChange={(e) => {
-                                  const val = Number(e.target.value);
-                                  const nextReqs = { ...requirementsState, [obligation.id]: val };
-                                  setRequirementsState(nextReqs);
-                                }}
-                                onBlur={() => void runOptimization(requirementsState)}
-                              />
-                            </div>
-                            <span className="table-subtext">{dollars(obligation.credited_collateral_cents)} credited</span>
-                          </td>
-                          <td>
-                            <div className="collateral-lines">
-                              {obligation.allocations.map((line) => (
-                                <div className="allocation-explanation" key={line.asset}>
-                                  <span>{line.quantity} × {line.asset}</span>
-                                  <small>{line.explanation}</small>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="numeric">{dollars(obligation.funding_cost_cents)}</td>
-                          <td>
-                            <div className="reservation-cell">
-                              <span className={`status-pill ${isActive ? "status-active" : "status-idle"}`}>
-                                <span />{isActive ? (isExpired ? "Expired · cleanup needed" : "Reserved") : "Not reserved"}
-                              </span>
-                              {isActive && chainState?.expiresAt && (
-                                <span className="table-subtext">
-                                  Expires {new Date(chainState.expiresAt * 1000).toLocaleTimeString()}
-                                </span>
-                              )}
-                              <button
-                                className={isActive ? "small-action secondary" : "small-action"}
-                                disabled={pending || (!isActive && !obligation.allocations.length)}
-                                onClick={() => void performReservation(obligation)}
-                                title={
-                                  isExpired
-                                    ? "Clear this expired reservation"
-                                    : isActive
-                                    ? "Counterparty-only release"
-                                    : "Reserve all units in one atomic transaction"
-                                }
-                              >
-                                {pending ? "Waiting…" : isExpired ? "Clear expired" : isActive ? "Release" : "Reserve"}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            </section>
+          )}
+
+          {/* 4 Metric KPI Cards */}
+          <section className="metrics-grid" aria-label="Portfolio summary">
+            <article className="kpi-card">
+              <div className="kpi-top">
+                <span className="kpi-label">OPTIMIZED FUNDING COST</span>
+                <span className="kpi-badge green">Global Solver</span>
               </div>
-            )}
-            <div className="panel-footnote">
-              Whole-unit linear programming across obligations. Change obligation dollar values to re-optimize in real-time.
-            </div>
-          </article>
+              <div className="kpi-value">{loading ? "…" : dollars(dashboard?.optimized.total_funding_cost_cents)}</div>
+              <div className="kpi-foot">Integer-cent global solver</div>
+            </article>
 
-          {/* Chart 2: "Who gets what" - Grouped stacked bars for BANK and CCP with toggle */}
-          <WhoGetsWhatChart dashboard={dashboard} />
-        </section>
-
-        <section className="chart-row-full">
-          <article className="panel comparison-panel">
-            <div className="panel-heading">
-              <div>
-                <div className="section-kicker">COST ANALYSIS</div>
-                <h2>Optimizer vs. greedy</h2>
+            <article className="kpi-card">
+              <div className="kpi-top">
+                <span className="kpi-label">TOTAL CAPITAL SAVED</span>
+                <span className="kpi-badge green">+{savingsPercent}% vs greedy</span>
               </div>
-              <span className="comparison-icon">↗</span>
-            </div>
-            {dashboard ? (
-              <>
-                <div className="comparison-row">
-                  <span>Optimized</span><strong>{dollars(dashboard.optimized.total_funding_cost_cents)}</strong>
-                </div>
-                <div className="comparison-row muted">
-                  <span>Greedy baseline</span><strong>{dollars(dashboard.greedy?.total_funding_cost_cents)}</strong>
-                </div>
-                <div className="comparison-track"><span style={{ width: `${Math.min(100, dashboard.savings_bps / 100)}%` }} /></div>
-                <div className="comparison-caption">
-                  <strong>{savingsPercent}%</strong> lower funding cost
-                </div>
-                <div className="asset-usage">
-                  {dashboard.assets.map((asset) => (
-                    <div className="asset-usage-row" key={asset.symbol}>
-                      <span>{asset.symbol}<small>{(asset.haircut_bps / 100).toFixed(2)}% haircut</small></span>
-                      <span>{dashboard.optimized.asset_usage[asset.symbol] ?? 0} / {asset.inventory}<small>units used</small></span>
-                    </div>
-                  ))}
-                </div>
-                <div className="false-shortfall">
-                  <div>
-                    <span>GREEDY-ONLY FALSE SHORTFALL</span>
-                    <strong>{dollars(dashboard.false_shortfall_scenario.greedy_shortfall_cents)}</strong>
-                  </div>
-                  <p>{dashboard.false_shortfall_scenario.explanation}</p>
-                  <small>
-                    Global reallocation covers all obligations at {dollars(
-                      dashboard.false_shortfall_scenario.optimized.total_funding_cost_cents,
-                    )}.
-                  </small>
-                </div>
-              </>
-            ) : null}
-          </article>
-        </section>
-
-        <section className="content-grid lower-grid">
-          <article className="panel stress-panel">
-            <div className="panel-heading">
-              <div>
-                <div className="section-kicker">RISK SIMULATOR (PDF PAGE 5)</div>
-                <h2>Interactive market stress test</h2>
+              <div className="kpi-value green-text">{loading ? "…" : dollars(dashboard?.savings_cents)}</div>
+              <div className="kpi-foot">
+                {dashboard ? `${savingsPercent}% cost reduction` : "Comparison pending"}
               </div>
-              <span className="comparison-icon">⌁</span>
-            </div>
+            </article>
 
-            {/* Interactive Market Shock Slider */}
-            <div className="stress-slider-box">
-              <div className="slider-header">
-                <label>Simulate Market Price Drop</label>
-                <span className="slider-value">
-                  {runningStress ? "Recalculating…" : `-${stressDropPercent}% Drop`}
+            <article className="kpi-card">
+              <div className="kpi-top">
+                <span className="kpi-label">ACTIVE OBLIGATIONS</span>
+                <span className="kpi-badge neutral">Multi-Counterparty</span>
+              </div>
+              <div className="kpi-value">{loading ? "…" : dashboard?.optimized.obligations.length ?? "—"}</div>
+              <div className="kpi-foot">BANK & CCP Shared Portfolios</div>
+            </article>
+
+            <article className="kpi-card">
+              <div className="kpi-top">
+                <span className="kpi-label">STRESS SHORTFALL</span>
+                <span className={`kpi-badge ${stress?.total_shortfall_cents ? "amber" : "green"}`}>
+                  -{stressDropPercent}% Shock
                 </span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="50"
-                step="1"
-                className="stress-range"
-                value={stressDropPercent}
-                onChange={(e) => void handleStressSliderChange(Number(e.target.value))}
-              />
-              <div className="slider-presets">
-                <button className={`preset-chip ${stressDropPercent === 0 ? "active" : ""}`} onClick={() => void handleStressSliderChange(0)}>0% Flat</button>
-                <button className={`preset-chip ${stressDropPercent === 10 ? "active" : ""}`} onClick={() => void handleStressSliderChange(10)}>10% (PDF)</button>
-                <button className={`preset-chip ${stressDropPercent === 20 ? "active" : ""}`} onClick={() => void handleStressSliderChange(20)}>20% Shock</button>
-                <button className={`preset-chip ${stressDropPercent === 35 ? "active" : ""}`} onClick={() => void handleStressSliderChange(35)}>35% Severe</button>
+              <div className="kpi-value">
+                {stress ? (stress.total_shortfall_cents === 0 ? "Covered" : dollars(stress.total_shortfall_cents)) : "—"}
               </div>
-            </div>
-
-            {/* Chart 3: "Stress test" - Horizontal bullet chart per obligation */}
-            <StressBulletChart
-              onTopUpApplied={() => {
-                appendActivity(
-                  activityItem(
-                    "success",
-                    "Top-up applied · BANK & CCP",
-                    "Collateral levels restored above required thresholds ($0 shortfall). Status: Covered.",
-                  ),
-                );
-              }}
-            />
-
-            {stress && (
-              <>
-                <div className="shock-chips">
-                  {Object.entries(stress.shocks_bps).map(([symbol, shock]) => (
-                    <span className="shock-chip" key={symbol}>{symbol} <strong>{formatBps(shock)}</strong></span>
-                  ))}
-                </div>
-                <div className="stress-table">
-                  {stress.obligations.map((item) => (
-                    <div className="stress-row" key={item.id}>
-                      <span><strong>{item.id}</strong><small>Requirement {dollars(item.requirement_cents)}</small></span>
-                      <span>{dollars(item.stressed_collateral_cents)} collateral</span>
-                      <strong className={item.shortfall_cents ? "amber" : "green"}>
-                        {item.shortfall_cents ? `−${dollars(item.shortfall_cents)}` : "Covered"}
-                      </strong>
-                      <div
-                        className="stress-bar"
-                        role="img"
-                        aria-label={`${item.id} collateral coverage ${Math.min(
-                          100,
-                          (item.stressed_collateral_cents / item.requirement_cents) * 100,
-                        ).toFixed(0)} percent`}
-                      >
-                        <span
-                          className={item.shortfall_cents ? "short" : ""}
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              (item.stressed_collateral_cents / item.requirement_cents) * 100,
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className={`topup-callout ${stress.top_up_feasible ? "" : "unavailable"}`}>
-                  <span>{stress.top_up_feasible ? "Cheapest feasible top-up (remaining inventory)" : "Top-up unavailable with remaining inventory"}</span>
-                  <strong>{stress.top_up_feasible ? dollars(stress.top_up_cost_cents) : "Infeasible"}</strong>
-                </div>
-              </>
-            )}
-          </article>
-
-          <article className="panel activity-panel">
-            <div className="panel-heading">
-              <div>
-                <div className="section-kicker">AUDIT TRAIL</div>
-                <h2>Activity log</h2>
-              </div>
-              <span className="activity-count">{activity.length.toString().padStart(2, "0")}</span>
-            </div>
-            {activity.length === 0 ? (
-              <div className="empty-state compact">Wallet, API, and local-chain outcomes will appear here.</div>
-            ) : (
-              <div className="activity-list">
-                {activity.map((item) => (
-                  <div className="activity-item" key={item.id}>
-                    <span className={`activity-marker ${item.kind}`} />
-                    <div className="activity-copy">
-                      <div><strong>{item.title}</strong><time>{item.time}</time></div>
-                      <p>{item.detail}</p>
-                      {item.hash && (
-                        <span className="hash-link">Local transaction · {shortAddress(item.hash)}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </article>
-        </section>
-
-        <section className="panel rejection-panel">
-          <div className="panel-heading">
-            <div>
-              <div className="section-kicker">CONTRACT GUARDRAILS</div>
-              <h2>Three live rejection checks</h2>
-            </div>
-            <span className="live-tag"><span />LOCAL CONTRACT CALLS</span>
-          </div>
-          <div className="rejection-grid">
-            <article className="rejection-card">
-              <div className="rejection-index">01</div>
-              <div>
-                <strong>Collateral already reserved</strong>
-                <p>Attempts a second reservation against the active obligation.</p>
-              </div>
-              <button
-                className="rejection-button"
-                disabled={
-                  !allocationRows[0] ||
-                  reservations[allocationRows[0].id]?.status !== "active" ||
-                  !!runningRejection
-                }
-                onClick={() => allocationRows[0] && void testLiveRejection("already-reserved", allocationRows[0])}
-              >
-                {runningRejection === "already-reserved" ? "Checking…" : "Test rejection"}
-              </button>
+              <div className="kpi-foot">Under simulated price drop</div>
             </article>
-            <article className="rejection-card">
-              <div className="rejection-index">02</div>
-              <div>
-                <strong>Ineligible asset</strong>
-                <p>Submits an asset outside this obligation's accepted list.</p>
-              </div>
-              <button
-                className="rejection-button"
-                disabled={!allocationRows[0] || !!runningRejection}
-                onClick={() => allocationRows[0] && void testLiveRejection("ineligible", allocationRows[0])}
-              >
-                {runningRejection === "ineligible" ? "Checking…" : "Test rejection"}
-              </button>
-            </article>
-            <article className="rejection-card">
-              <div className="rejection-index">03</div>
-              <div>
-                <strong>Expired transaction</strong>
-                <p>Advances local EVM block time and verifies the on-chain deadline check.</p>
-              </div>
-              <button
-                className="rejection-button"
-                disabled={!allocationRows[0] || !!runningRejection}
-                onClick={() => allocationRows[0] && void testLiveRejection("expired", allocationRows[0])}
-              >
-                {runningRejection === "expired" ? "Checking…" : "Test rejection"}
-              </button>
-            </article>
-          </div>
-        </section>
+          </section>
 
-        {/* Wallet Connection Modal */}
-        {showWalletModal && (
-          <div className="modal-overlay" onClick={() => setShowWalletModal(false)}>
-            <div className="modal-window" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>{walletAddress ? "Connected Wallet" : "Connect a Wallet"}</h3>
-                <button className="modal-close" onClick={() => setShowWalletModal(false)}>✕</button>
-              </div>
-              <p className="modal-subtitle">
-                {walletAddress
-                  ? `Active session: ${walletAddress} (${signingMode === "wallet" ? "MetaMask" : connectedLocalRole || localRole})`
-                  : "Choose your preferred wallet to sign collateral transactions on the local EVM chain."}
-              </p>
+          {/* Chart 1: "Where the money goes" */}
+          <section className="chart-row-full" id="capital-flow-section" aria-label="Where the money goes">
+            <WhereMoneyGoesChart dashboard={dashboard} />
+          </section>
 
-              {walletModalNotice && (
-                <div className="modal-notice warning">
-                  {walletModalNotice}
+          {/* 2-Column Allocation Grid: Table (Left) + Chart 2: Who gets what (Right) */}
+          <section className="allocation-section-grid" id="allocations-section">
+            <article className="table-panel">
+              <div className="card-header">
+                <div>
+                  <div className="section-kicker">OPTIMIZATION OUTPUT</div>
+                  <h2 className="card-title">Recommended allocation</h2>
+                </div>
+                <span className="badge-tag-live">
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: "var(--accent-primary)",
+                      display: "inline-block",
+                      marginRight: 4,
+                    }}
+                  />
+                  DYNAMIC SOLVER
+                </span>
+              </div>
+              {filteredAllocationRows.length === 0 ? (
+                <div style={{ padding: "36px 24px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                  No allocations match the search query.
+                </div>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>OBLIGATION</th>
+                        <th>REQUIREMENT (EDITABLE)</th>
+                        <th>ALLOCATED COLLATERAL</th>
+                        <th>FUNDING COST</th>
+                        <th>ON-CHAIN RESERVATION</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAllocationRows.map((obligation) => {
+                        const chainState = reservations[obligation.id];
+                        const isActive = chainState?.status === "active";
+                        const isExpired =
+                          isActive &&
+                          chainState.expiresAt !== undefined &&
+                          chainState.expiresAt <= Math.floor(Date.now() / 1000);
+                        const pending = pendingObligation === obligation.id;
+                        return (
+                          <tr key={obligation.id}>
+                            <td>
+                              <span className="obligation-name">{obligation.name}</span>
+                              <span className="table-subtext">{obligation.id}</span>
+                              <span className="table-subtext">
+                                Accepted: {dashboard?.assets
+                                  .filter((asset) => asset.eligible_obligations.includes(obligation.id))
+                                  .map((asset) => asset.symbol)
+                                  .join(" · ") || "none"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="obligation-edit-row">
+                                <span>$</span>
+                                <input
+                                  type="number"
+                                  className="amount-input"
+                                  value={requirementsState[obligation.id] ?? (obligation.requirement_cents / 100)}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    const nextReqs = { ...requirementsState, [obligation.id]: val };
+                                    setRequirementsState(nextReqs);
+                                  }}
+                                  onBlur={() => void runOptimization(requirementsState)}
+                                />
+                              </div>
+                              <span className="table-subtext">{dollars(obligation.credited_collateral_cents)} credited</span>
+                            </td>
+                            <td>
+                              <div className="collateral-lines">
+                                {obligation.allocations.map((line) => (
+                                  <div className="allocation-explanation" key={line.asset}>
+                                    <span>{line.quantity} × {line.asset}</span>
+                                    <small>{line.explanation}</small>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="numeric font-mono" style={{ fontWeight: 700 }}>
+                              {dollars(obligation.funding_cost_cents)}
+                            </td>
+                            <td>
+                              <div className="reservation-cell">
+                                <span className={`status-pill ${isActive ? "status-active" : "status-idle"}`}>
+                                  <span className="status-pill-dot" />
+                                  {isActive ? (isExpired ? "Expired · cleanup needed" : "Reserved") : "Not reserved"}
+                                </span>
+                                {isActive && chainState?.expiresAt && (
+                                  <span className="table-subtext">
+                                    Expires {new Date(chainState.expiresAt * 1000).toLocaleTimeString()}
+                                  </span>
+                                )}
+                                <button
+                                  className={isActive ? "small-action secondary" : "small-action"}
+                                  disabled={pending || (!isActive && !obligation.allocations.length)}
+                                  onClick={() => void performReservation(obligation)}
+                                  title={
+                                    isExpired
+                                      ? "Clear this expired reservation"
+                                      : isActive
+                                      ? "Counterparty-only release"
+                                      : "Reserve all units in one atomic transaction"
+                                  }
+                                >
+                                  {pending ? "Waiting…" : isExpired ? "Clear expired" : isActive ? "Release" : "Reserve"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
-
-              <div className="wallet-options">
-                <button className="wallet-option-card" onClick={() => void connectMetaMask()}>
-                  <div className="wallet-option-icon">🦊</div>
-                  <div className="wallet-option-info">
-                    <strong>MetaMask Extension</strong>
-                    <small>Connect browser wallet (requests chain 31337)</small>
-                  </div>
-                </button>
-
-                <button className="wallet-option-card" onClick={() => void selectLocalAccount("pledgor")}>
-                  <div className="wallet-option-icon pledgor-icon">◈</div>
-                  <div className="wallet-option-info">
-                    <strong>Demo Pledgor (0xf39F…2266)</strong>
-                    <small>Hardhat Account #0 · Reserves collateral</small>
-                  </div>
-                  <span className="badge">1-Click Local</span>
-                </button>
-
-                <button className="wallet-option-card" onClick={() => void selectLocalAccount("counterparty")}>
-                  <div className="wallet-option-icon counterparty-icon">◈</div>
-                  <div className="wallet-option-info">
-                    <strong>Demo Counterparty (0x7099…79C8)</strong>
-                    <small>Hardhat Account #1 · Creates & releases</small>
-                  </div>
-                  <span className="badge">1-Click Local</span>
-                </button>
+              <div className="panel-footnote">
+                Whole-unit linear programming across obligations. Change obligation dollar values to re-optimize in real-time.
               </div>
+            </article>
 
-              <div className="modal-footer">
-                {walletAddress && (
-                  <button className="btn-accent" onClick={disconnectWallet}>
-                    Disconnect Wallet
-                  </button>
-                )}
-                <button className="btn-secondary" onClick={() => setShowWalletModal(false)}>
-                  Close
-                </button>
+            {/* Chart 2: "Who gets what" */}
+            <WhoGetsWhatChart dashboard={dashboard} />
+          </section>
+
+          {/* Cost Analysis Card */}
+          <section className="comparison-card">
+            <div className="card-header">
+              <div>
+                <div className="section-kicker">COST ANALYSIS</div>
+                <h2 className="card-title">Optimizer vs. greedy baseline</h2>
               </div>
             </div>
-          </div>
-        )}
+            {dashboard ? (
+              <div className="comparison-grid">
+                <div className="comparison-left">
+                  <div className="comparison-stat-row highlight">
+                    <span>Collatrix global optimization:</span>
+                    <strong>{dollars(dashboard.optimized.total_funding_cost_cents)}</strong>
+                  </div>
+                  <div className="comparison-stat-row">
+                    <span>First-come sequential greedy baseline:</span>
+                    <strong>{dollars(dashboard.greedy?.total_funding_cost_cents)}</strong>
+                  </div>
+                  <div className="progress-track-wrap">
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${Math.min(100, dashboard.savings_bps / 100)}%` }} />
+                    </div>
+                    <div className="progress-caption">
+                      <strong>{savingsPercent}%</strong> lower overall funding cost across portfolio
+                    </div>
+                  </div>
+                  <div className="asset-inventory-grid">
+                    {dashboard.assets.map((asset) => (
+                      <div className="asset-inv-row" key={asset.symbol}>
+                        <span className="asset-inv-symbol">
+                          {asset.symbol}
+                          <span className="asset-inv-haircut">({(asset.haircut_bps / 100).toFixed(1)}% haircut)</span>
+                        </span>
+                        <span>
+                          <strong>{dashboard.optimized.asset_usage[asset.symbol] ?? 0}</strong> / {asset.inventory} units used
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-        {/* Counterparty Obligation Modal */}
-        {showCreateModal && (
-          <div className="modal-overlay">
-            <div className="modal-window">
-              <div className="modal-header">
-                <h3>Create New Obligation (Counterparty)</h3>
-                <button className="modal-close" onClick={() => setShowCreateModal(false)}>✕</button>
-              </div>
-              <div className="form-field">
-                <label>Obligation ID</label>
-                <input
-                  type="text"
-                  value={newObligationId}
-                  onChange={(e) => setNewObligationId(e.target.value)}
-                  placeholder="e.g. OBL-003"
-                />
-              </div>
-              <div className="form-field">
-                <label>Obligation Name / Purpose</label>
-                <input
-                  type="text"
-                  value={newObligationName}
-                  onChange={(e) => setNewObligationName(e.target.value)}
-                  placeholder="e.g. Repo pledge"
-                />
-              </div>
-              <div className="form-field">
-                <label>Collateral Requirement ($ USD)</label>
-                <input
-                  type="number"
-                  value={newObligationDollars}
-                  onChange={(e) => setNewObligationDollars(Number(e.target.value))}
-                />
-              </div>
-              <div className="form-field">
-                <label>Accepted Assets List</label>
-                <div className="checkbox-group">
-                  {["CASH", "UST", "CORP"].map((symbol) => (
-                    <label className="checkbox-label" key={symbol}>
-                      <input
-                        type="checkbox"
-                        checked={newAcceptedAssets.includes(symbol)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setNewAcceptedAssets([...newAcceptedAssets, symbol]);
-                          } else {
-                            setNewAcceptedAssets(newAcceptedAssets.filter((s) => s !== symbol));
-                          }
-                        }}
-                      />
-                      {symbol}
-                    </label>
-                  ))}
+                <div className="false-shortfall-box">
+                  <div className="false-shortfall-header">
+                    <span className="false-shortfall-title">GREEDY-ONLY FALSE SHORTFALL</span>
+                    <span className="false-shortfall-amount">{dollars(dashboard.false_shortfall_scenario.greedy_shortfall_cents)}</span>
+                  </div>
+                  <p className="false-shortfall-desc">{dashboard.false_shortfall_scenario.explanation}</p>
+                  <span className="false-shortfall-sub">
+                    Global reallocation covers all obligations at {dollars(dashboard.false_shortfall_scenario.optimized.total_funding_cost_cents)}.
+                  </span>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>
-                <button className="btn-primary" onClick={() => void handleCreateObligation()}>
-                  Deploy & Add Obligation
-                </button>
+            ) : null}
+          </section>
+
+          {/* Risk & Stress Testing Grid (2-Column) */}
+          <section className="lower-grid" id="risk-stress-section">
+            <article className="stress-card">
+              <div className="card-header">
+                <div>
+                  <div className="section-kicker">RISK SIMULATOR (PDF PAGE 5)</div>
+                  <h2 className="card-title">Interactive market stress test</h2>
+                </div>
               </div>
+
+              <div className="card-body">
+                {/* Interactive Market Shock Slider */}
+                <div className="stress-slider-box">
+                  <div className="slider-header">
+                    <span className="slider-label">Simulate Market Price Drop</span>
+                    <span className="slider-value">
+                      {runningStress ? "Recalculating…" : `-${stressDropPercent}% Drop`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="50"
+                    step="1"
+                    className="stress-range"
+                    value={stressDropPercent}
+                    onChange={(e) => void handleStressSliderChange(Number(e.target.value))}
+                  />
+                  <div className="slider-presets">
+                    <button className={`preset-chip ${stressDropPercent === 0 ? "active" : ""}`} onClick={() => void handleStressSliderChange(0)}>0% Flat</button>
+                    <button className={`preset-chip ${stressDropPercent === 10 ? "active" : ""}`} onClick={() => void handleStressSliderChange(10)}>10% (PDF)</button>
+                    <button className={`preset-chip ${stressDropPercent === 20 ? "active" : ""}`} onClick={() => void handleStressSliderChange(20)}>20% Shock</button>
+                    <button className={`preset-chip ${stressDropPercent === 35 ? "active" : ""}`} onClick={() => void handleStressSliderChange(35)}>35% Severe</button>
+                  </div>
+                </div>
+
+                {/* Chart 3: Stress Bullet Chart */}
+                <StressBulletChart
+                  onTopUpApplied={() => {
+                    appendActivity(
+                      activityItem(
+                        "success",
+                        "Top-up applied · BANK & CCP",
+                        "Collateral levels restored above required thresholds ($0 shortfall). Status: Covered.",
+                      ),
+                    );
+                  }}
+                />
+
+                {stress && (
+                  <>
+                    <div className="shock-chips">
+                      {Object.entries(stress.shocks_bps).map(([symbol, shock]) => (
+                        <span className="shock-chip" key={symbol}>
+                          {symbol}: <strong>{formatBps(shock)}</strong>
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="stress-table">
+                      {stress.obligations.map((item) => (
+                        <div className="stress-row" key={item.id}>
+                          <span>
+                            <strong>{item.id}</strong>
+                            <small>Req {dollars(item.requirement_cents)}</small>
+                          </span>
+                          <span className="font-mono">{dollars(item.stressed_collateral_cents)} collateral</span>
+                          <strong className={item.shortfall_cents ? "red-text" : "green-text"}>
+                            {item.shortfall_cents ? `−${dollars(item.shortfall_cents)}` : "Covered"}
+                          </strong>
+                          <div className="stress-bar-wrap">
+                            <div
+                              className={`stress-bar-fill ${item.shortfall_cents ? "short" : ""}`}
+                              style={{ width: `${Math.min(100, (item.stressed_collateral_cents / item.requirement_cents) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={`topup-callout ${stress.top_up_feasible ? "" : "unavailable"}`}>
+                      <span>
+                        {stress.top_up_feasible ? "Cheapest feasible top-up (remaining inventory)" : "Top-up unavailable with remaining inventory"}
+                      </span>
+                      <strong>{stress.top_up_feasible ? dollars(stress.top_up_cost_cents) : "Infeasible"}</strong>
+                    </div>
+                  </>
+                )}
+              </div>
+            </article>
+
+            {/* Audit Trail / Activity Log */}
+            <article className="activity-card" id="audit-section">
+              <div className="card-header">
+                <div>
+                  <div className="section-kicker">AUDIT TRAIL</div>
+                  <h2 className="card-title">Activity log</h2>
+                </div>
+                <span className="activity-count">{activity.length.toString().padStart(2, "0")} events</span>
+              </div>
+              <div className="card-body">
+                {activity.length === 0 ? (
+                  <div style={{ padding: "36px 12px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                    Wallet, API, and local-chain outcomes will appear here.
+                  </div>
+                ) : (
+                  <div className="activity-list">
+                    {activity.map((item) => (
+                      <div className="activity-item" key={item.id}>
+                        <span className={`activity-marker ${item.kind}`} />
+                        <div className="activity-copy">
+                          <div className="activity-copy-header">
+                            <strong>{item.title}</strong>
+                            <time>{item.time}</time>
+                          </div>
+                          <p>{item.detail}</p>
+                          {item.hash && (
+                            <span className="hash-link">Tx: {shortAddress(item.hash)}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </article>
+          </section>
+
+          {/* Contract Guardrails (3 Live Rejection Checks) */}
+          <section className="rejection-panel" id="guardrails-section">
+            <div className="card-header">
+              <div>
+                <div className="section-kicker">CONTRACT GUARDRAILS</div>
+                <h2 className="card-title">Three live rejection checks</h2>
+              </div>
+              <span className="badge-tag-live">LOCAL CONTRACT STATIC CALLS</span>
+            </div>
+            <div className="rejection-grid">
+              <article className="rejection-card">
+                <div className="rejection-card-top">
+                  <div className="rejection-index">01</div>
+                  <div>
+                    <strong>Collateral already reserved</strong>
+                    <p>Attempts a second reservation against the active obligation.</p>
+                  </div>
+                </div>
+                <button
+                  className="rejection-button"
+                  disabled={
+                    !allocationRows[0] ||
+                    reservations[allocationRows[0].id]?.status !== "active" ||
+                    !!runningRejection
+                  }
+                  onClick={() => allocationRows[0] && void testLiveRejection("already-reserved", allocationRows[0])}
+                >
+                  {runningRejection === "already-reserved" ? "Checking…" : "Test rejection"}
+                </button>
+              </article>
+
+              <article className="rejection-card">
+                <div className="rejection-card-top">
+                  <div className="rejection-index">02</div>
+                  <div>
+                    <strong>Ineligible asset</strong>
+                    <p>Submits an asset outside this obligation's accepted list.</p>
+                  </div>
+                </div>
+                <button
+                  className="rejection-button"
+                  disabled={!allocationRows[0] || !!runningRejection}
+                  onClick={() => allocationRows[0] && void testLiveRejection("ineligible", allocationRows[0])}
+                >
+                  {runningRejection === "ineligible" ? "Checking…" : "Test rejection"}
+                </button>
+              </article>
+
+              <article className="rejection-card">
+                <div className="rejection-card-top">
+                  <div className="rejection-index">03</div>
+                  <div>
+                    <strong>Expired transaction</strong>
+                    <p>Advances local EVM block time and verifies the on-chain deadline check.</p>
+                  </div>
+                </div>
+                <button
+                  className="rejection-button"
+                  disabled={!allocationRows[0] || !!runningRejection}
+                  onClick={() => allocationRows[0] && void testLiveRejection("expired", allocationRows[0])}
+                >
+                  {runningRejection === "expired" ? "Checking…" : "Test rejection"}
+                </button>
+              </article>
+            </div>
+          </section>
+
+          {/* Footer */}
+          <footer className="page-footer">
+            <span>COLLATRIX · ENTERPRISE COLLATERAL DESK · VERIFIABLE SAAS PROTOTYPE</span>
+            <span>WHOLE-UNIT OPTIMIZATION · LOCAL EVM NODE · NOT A FINANCIAL TRANSACTION</span>
+          </footer>
+        </main>
+      </div>
+
+      {/* Wallet Connection Modal */}
+      {showWalletModal && (
+        <div className="modal-overlay" onClick={() => setShowWalletModal(false)}>
+          <div className="modal-window" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{walletAddress ? "Connected Wallet" : "Connect a Wallet"}</h3>
+              <button className="modal-close" onClick={() => setShowWalletModal(false)}>✕</button>
+            </div>
+            <p className="modal-subtitle">
+              {walletAddress
+                ? `Active session: ${walletAddress} (${signingMode === "wallet" ? "MetaMask" : connectedLocalRole || localRole})`
+                : "Choose your preferred wallet to sign collateral transactions on the local EVM chain."}
+            </p>
+
+            {walletModalNotice && (
+              <div className="modal-notice warning">
+                {walletModalNotice}
+              </div>
+            )}
+
+            <div className="wallet-options">
+              <button className="wallet-option-card" onClick={() => void connectMetaMask()}>
+                <div className="wallet-option-icon">🦊</div>
+                <div className="wallet-option-info">
+                  <strong>MetaMask Extension</strong>
+                  <small>Connect browser wallet (requests chain 31337)</small>
+                </div>
+              </button>
+
+              <button className="wallet-option-card" onClick={() => void selectLocalAccount("pledgor")}>
+                <div className="wallet-option-icon pledgor-icon">◈</div>
+                <div className="wallet-option-info">
+                  <strong>Demo Pledgor (0xf39F…2266)</strong>
+                  <small>Hardhat Account #0 · Reserves collateral</small>
+                </div>
+                <span className="badge">1-Click Local</span>
+              </button>
+
+              <button className="wallet-option-card" onClick={() => void selectLocalAccount("counterparty")}>
+                <div className="wallet-option-icon counterparty-icon">◈</div>
+                <div className="wallet-option-info">
+                  <strong>Demo Counterparty (0x7099…79C8)</strong>
+                  <small>Hardhat Account #1 · Creates & releases</small>
+                </div>
+                <span className="badge">1-Click Local</span>
+              </button>
+            </div>
+
+            <div className="modal-footer">
+              {walletAddress && (
+                <button className="btn-accent" onClick={disconnectWallet}>
+                  Disconnect Wallet
+                </button>
+              )}
+              <button className="btn-secondary" onClick={() => setShowWalletModal(false)}>
+                Close
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        <footer className="page-footer">
-          <span>COLLATRIX <span className="footer-dot">•</span> HACKATHON PROTOTYPE</span>
-          <span>DYNAMIC OPTIMIZATION · LOCAL EVM NODE · NOT A FINANCIAL TRANSACTION</span>
-        </footer>
-      </main>
+      {/* Counterparty Obligation Modal */}
+      {showCreateModal && (
+        <div className="modal-overlay">
+          <div className="modal-window">
+            <div className="modal-header">
+              <h3>Create New Obligation (Counterparty)</h3>
+              <button className="modal-close" onClick={() => setShowCreateModal(false)}>✕</button>
+            </div>
+            <div className="form-field">
+              <label>Obligation ID</label>
+              <input
+                type="text"
+                value={newObligationId}
+                onChange={(e) => setNewObligationId(e.target.value)}
+                placeholder="e.g. OBL-003"
+              />
+            </div>
+            <div className="form-field">
+              <label>Obligation Name / Purpose</label>
+              <input
+                type="text"
+                value={newObligationName}
+                onChange={(e) => setNewObligationName(e.target.value)}
+                placeholder="e.g. Repo pledge"
+              />
+            </div>
+            <div className="form-field">
+              <label>Collateral Requirement ($ USD)</label>
+              <input
+                type="number"
+                value={newObligationDollars}
+                onChange={(e) => setNewObligationDollars(Number(e.target.value))}
+              />
+            </div>
+            <div className="form-field">
+              <label>Accepted Assets List</label>
+              <div className="checkbox-group">
+                {["CASH", "UST", "CORP"].map((symbol) => (
+                  <label className="checkbox-label" key={symbol}>
+                    <input
+                      type="checkbox"
+                      checked={newAcceptedAssets.includes(symbol)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setNewAcceptedAssets([...newAcceptedAssets, symbol]);
+                        } else {
+                          setNewAcceptedAssets(newAcceptedAssets.filter((s) => s !== symbol));
+                        }
+                      }}
+                    />
+                    {symbol}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>
+              <button className="btn-primary" onClick={() => void handleCreateObligation()}>
+                Deploy & Add Obligation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

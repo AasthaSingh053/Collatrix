@@ -13,19 +13,19 @@ import {
 } from "recharts";
 import type { DashboardData } from "./types";
 
-// Strict color scheme matching design requirements:
+// Consistent palette matching guidelines:
 // UST = deep blue, CASH = amber, CORP = teal
 // green/red strictly reserved for covered/shortfall
 export const ASSET_COLORS: Record<string, string> = {
-  UST: "#1d4ed8",  // deep blue
-  CASH: "#f59e0b", // amber
+  UST: "#1d4ed8",  // deep cobalt/royal blue
+  CASH: "#f59e0b", // warm amber
   CORP: "#0d9488", // teal
 };
 
 export const STATUS_COLORS = {
-  covered: "#10b981",  // green
-  shortfall: "#ef4444", // red
-  stressed: "#334155",  // muted slate for stressed collateral under shock
+  covered: "#10b981",  // emerald green
+  shortfall: "#ef4444", // coral red
+  stressed: "#94a3b8",  // clean light slate for stressed collateral bar
 };
 
 export interface ReplayBenchmarkData {
@@ -168,8 +168,10 @@ export function CustomChartTooltip({ active, payload, label, totalLabel }: Custo
             if (val <= 0 || isNaN(val)) return null;
             return (
               <div key={`item-${index}`} className="tooltip-row">
-                <span className="tooltip-dot" style={{ backgroundColor: entry.color }} />
-                <span className="tooltip-name">{entry.name}:</span>
+                <div className="tooltip-row-left">
+                  <span className="tooltip-dot" style={{ backgroundColor: entry.color }} />
+                  <span className="tooltip-name">{entry.name}:</span>
+                </div>
                 <span className="tooltip-val font-mono">{formatMoney(val)}</span>
               </div>
             );
@@ -196,9 +198,7 @@ interface WhereMoneyGoesChartProps {
 }
 
 export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
-  // Read from existing API results if available with matching counterparty values, or fallback to canonical Replay JSON
   const data = useMemo(() => {
-    // If API returned obligations matching institutional replay
     if (dashboard?.optimized && dashboard?.greedy) {
       const optUST = dashboard.optimized.obligations.reduce((sum, ob) => {
         const line = ob.allocations.find((a) => a.asset === "UST");
@@ -213,7 +213,6 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
         return sum + (line ? line.funding_cost_cents / 100 : 0);
       }, 0);
 
-      // If these match the scale of the replay benchmark
       if (optUST > 5000 || optCORP > 1000) {
         const grUST = dashboard.greedy.obligations.reduce((sum, ob) => {
           const line = ob.allocations.find((a) => a.asset === "UST");
@@ -246,7 +245,6 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
         ];
       }
     }
-    // Default canonical replay benchmark
     return REPLAY_BENCHMARK.moneyFlow;
   }, [dashboard]);
 
@@ -256,11 +254,11 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
   const savingsPercent = ((savings / (firstComeTotal || 1)) * 100).toFixed(1);
 
   return (
-    <article className="panel chart-card money-goes-card">
-      <div className="panel-heading">
+    <article className="chart-card money-goes-card">
+      <div className="card-header">
         <div>
           <div className="section-kicker">CAPITAL EFFICIENCY · CHART 1</div>
-          <h2>Where the money goes</h2>
+          <h2 className="card-title">Where the money goes</h2>
         </div>
         <div className="chart-kpi-pill-group">
           <div className="chart-kpi-pill">
@@ -272,13 +270,13 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
             <strong className="font-mono">{formatMoney(collatrixTotal)}</strong>
           </div>
           <div className="chart-kpi-pill savings">
-            <span className="kpi-tag">Saved</span>
-            <strong className="font-mono green">-{formatMoney(savings)} ({savingsPercent}%)</strong>
+            <span className="kpi-tag">Savings</span>
+            <strong className="font-mono green-text">-{formatMoney(savings)} ({savingsPercent}%)</strong>
           </div>
         </div>
       </div>
 
-      <div className="chart-body">
+      <div className="card-body">
         <div className="chart-legend-top">
           <span className="legend-item">
             <span className="legend-dot" style={{ backgroundColor: ASSET_COLORS.UST }} />
@@ -299,28 +297,28 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
             <BarChart
               data={data}
               margin={{ top: 32, right: 30, left: 20, bottom: 20 }}
-              barSize={72}
+              barSize={68}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f3342" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
               <XAxis
                 dataKey="strategy"
-                stroke="#8496a5"
-                tick={{ fill: "#cbd5e1", fontSize: 13, fontWeight: 600 }}
-                axisLine={{ stroke: "#213341" }}
-                tickLine={{ stroke: "#213341" }}
+                stroke="#94A3B8"
+                tick={{ fill: "#334155", fontSize: 13, fontWeight: 600 }}
+                axisLine={{ stroke: "#E2E8F0" }}
+                tickLine={{ stroke: "#E2E8F0" }}
               />
               <YAxis
-                stroke="#8496a5"
+                stroke="#94A3B8"
                 domain={[0, 16000]}
                 tickFormatter={(val: number) => `$${(val / 1000).toFixed(0)}k`}
-                tick={{ fill: "#94a3b8", fontSize: 11, fontFamily: "var(--mono)" }}
-                axisLine={{ stroke: "#213341" }}
-                tickLine={{ stroke: "#213341" }}
+                tick={{ fill: "#64748B", fontSize: 11, fontFamily: "var(--mono)" }}
+                axisLine={{ stroke: "#E2E8F0" }}
+                tickLine={{ stroke: "#E2E8F0" }}
                 label={{
                   value: "Funding Cost ($ USD)",
                   angle: -90,
                   position: "insideLeft",
-                  fill: "#64748b",
+                  fill: "#94A3B8",
                   fontSize: 11,
                   offset: 0,
                   style: { textAnchor: "middle" },
@@ -328,7 +326,7 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
               />
               <Tooltip
                 content={<CustomChartTooltip totalLabel="Total Funding Cost" />}
-                cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+                cursor={{ fill: "rgba(241, 245, 249, 0.6)" }}
               />
               <Legend verticalAlign="top" align="center" wrapperStyle={{ display: "none" }} />
               <Bar
@@ -337,6 +335,7 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
                 stackId="fundingCost"
                 fill={ASSET_COLORS.UST}
                 animationDuration={500}
+                radius={[0, 0, 0, 0]}
               />
               <Bar
                 dataKey="CASH"
@@ -344,6 +343,7 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
                 stackId="fundingCost"
                 fill={ASSET_COLORS.CASH}
                 animationDuration={500}
+                radius={[0, 0, 0, 0]}
               />
               <Bar
                 dataKey="CORP"
@@ -351,6 +351,7 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
                 stackId="fundingCost"
                 fill={ASSET_COLORS.CORP}
                 animationDuration={500}
+                radius={[6, 6, 0, 0]}
               >
                 {/* Display total directly above each stacked bar */}
                 <LabelList
@@ -358,7 +359,7 @@ export function WhereMoneyGoesChart({ dashboard }: WhereMoneyGoesChartProps) {
                   position="top"
                   offset={10}
                   formatter={(val: unknown) => formatMoney(Number(val))}
-                  fill="#edf3f7"
+                  fill="#0F172A"
                   style={{
                     fontFamily: "var(--mono)",
                     fontSize: "13px",
@@ -390,9 +391,7 @@ interface WhoGetsWhatChartProps {
 export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
   const [strategy, setStrategy] = useState<"collatrix" | "firstCome">("collatrix");
 
-  // Read data based on strategy
   const chartData = useMemo(() => {
-    // If dynamic dashboard has BANK and CCP
     if (dashboard?.optimized?.obligations?.some((o) => o.id === "BANK" || o.name.includes("BANK"))) {
       const activePlan = strategy === "collatrix" ? dashboard.optimized : (dashboard.greedy || dashboard.optimized);
       return activePlan.obligations.map((ob) => {
@@ -412,16 +411,15 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
         };
       });
     }
-    // Fall back to benchmark replay JSON
     return REPLAY_BENCHMARK.whoGetsWhat[strategy];
   }, [dashboard, strategy]);
 
   return (
-    <article className="panel chart-card who-gets-what-card">
-      <div className="panel-heading">
+    <article className="chart-card who-gets-what-card">
+      <div className="card-header">
         <div>
           <div className="section-kicker">COUNTERPARTY DISTRIBUTION · CHART 2</div>
-          <h2>Who gets what</h2>
+          <h2 className="card-title">Who gets what</h2>
         </div>
         <div className="toggle-pill-wrap">
           <button
@@ -441,7 +439,7 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
         </div>
       </div>
 
-      <div className="chart-body">
+      <div className="card-body">
         <div className="chart-legend-top">
           <span className="legend-item">
             <span className="legend-dot" style={{ backgroundColor: ASSET_COLORS.UST }} />
@@ -462,28 +460,28 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
             <BarChart
               data={chartData}
               margin={{ top: 32, right: 30, left: 24, bottom: 20 }}
-              barSize={64}
+              barSize={60}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f3342" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
               <XAxis
                 dataKey="obligation"
-                stroke="#8496a5"
-                tick={{ fill: "#cbd5e1", fontSize: 13, fontWeight: 700 }}
-                axisLine={{ stroke: "#213341" }}
-                tickLine={{ stroke: "#213341" }}
+                stroke="#94A3B8"
+                tick={{ fill: "#334155", fontSize: 13, fontWeight: 700 }}
+                axisLine={{ stroke: "#E2E8F0" }}
+                tickLine={{ stroke: "#E2E8F0" }}
               />
               <YAxis
-                stroke="#8496a5"
+                stroke="#94A3B8"
                 domain={[0, 350000]}
                 tickFormatter={(val: number) => `$${(val / 1000).toFixed(0)}k`}
-                tick={{ fill: "#94a3b8", fontSize: 11, fontFamily: "var(--mono)" }}
-                axisLine={{ stroke: "#213341" }}
-                tickLine={{ stroke: "#213341" }}
+                tick={{ fill: "#64748B", fontSize: 11, fontFamily: "var(--mono)" }}
+                axisLine={{ stroke: "#E2E8F0" }}
+                tickLine={{ stroke: "#E2E8F0" }}
                 label={{
                   value: "Usable Collateral Value ($ USD)",
                   angle: -90,
                   position: "insideLeft",
-                  fill: "#64748b",
+                  fill: "#94A3B8",
                   fontSize: 11,
                   offset: -4,
                   style: { textAnchor: "middle" },
@@ -491,7 +489,7 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
               />
               <Tooltip
                 content={<CustomChartTooltip totalLabel="Total Collateral" />}
-                cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+                cursor={{ fill: "rgba(241, 245, 249, 0.6)" }}
               />
               <Legend verticalAlign="top" align="center" wrapperStyle={{ display: "none" }} />
               <Bar
@@ -500,6 +498,7 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
                 stackId="usable"
                 fill={ASSET_COLORS.UST}
                 animationDuration={500}
+                radius={[0, 0, 0, 0]}
               />
               <Bar
                 dataKey="CASH"
@@ -507,6 +506,7 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
                 stackId="usable"
                 fill={ASSET_COLORS.CASH}
                 animationDuration={500}
+                radius={[0, 0, 0, 0]}
               />
               <Bar
                 dataKey="CORP"
@@ -514,13 +514,14 @@ export function WhoGetsWhatChart({ dashboard }: WhoGetsWhatChartProps) {
                 stackId="usable"
                 fill={ASSET_COLORS.CORP}
                 animationDuration={500}
+                radius={[6, 6, 0, 0]}
               >
                 <LabelList
                   dataKey="total"
                   position="top"
                   offset={10}
                   formatter={(val: unknown) => formatMoney(Number(val))}
-                  fill="#edf3f7"
+                  fill="#0F172A"
                   style={{
                     fontFamily: "var(--mono)",
                     fontSize: "12px",
@@ -566,7 +567,6 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
         {
           name: "BANK",
           requirement: required,
-          // When topped up, full covered amount is rendered green
           coveredValue: toppedUpVal,
           stressedValue: 0,
           shortfallGap: 0,
@@ -622,11 +622,11 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
   }
 
   return (
-    <article className="panel chart-card stress-bullet-card">
-      <div className="panel-heading">
+    <article className="chart-card stress-bullet-card">
+      <div className="card-header">
         <div>
           <div className="section-kicker">RISK SIMULATOR · CHART 3</div>
-          <h2>Stress test bullet chart</h2>
+          <h2 className="card-title">Stress test bullet chart</h2>
         </div>
         <div className="chart-actions">
           <button
@@ -640,8 +640,7 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
         </div>
       </div>
 
-      <div className="chart-body">
-        {/* Top legend matching requirements */}
+      <div className="card-body">
         <div className="chart-legend-top bullet-legend">
           <span className="legend-item">
             <span
@@ -655,7 +654,7 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
             Shortfall Gap (Deficit in Red)
           </span>
           <span className="legend-item">
-            <span className="legend-line-mark" />
+            <span className="legend-line-mark" style={{ background: "#0F172A", borderTop: "2px dashed #0F172A" }} />
             Required Amount (Target Line)
           </span>
         </div>
@@ -684,17 +683,17 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
                 layout="vertical"
                 data={bankData}
                 margin={{ top: 12, right: 35, left: 10, bottom: 12 }}
-                barSize={26}
+                barSize={24}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f3342" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
                 <XAxis
                   type="number"
                   domain={[0, 275000]}
                   tickFormatter={(val: number) => `$${(val / 1000).toFixed(0)}k`}
-                  stroke="#8496a5"
-                  tick={{ fill: "#94a3b8", fontSize: 10, fontFamily: "var(--mono)" }}
-                  axisLine={{ stroke: "#213341" }}
-                  tickLine={{ stroke: "#213341" }}
+                  stroke="#94A3B8"
+                  tick={{ fill: "#64748B", fontSize: 10, fontFamily: "var(--mono)" }}
+                  axisLine={{ stroke: "#E2E8F0" }}
+                  tickLine={{ stroke: "#E2E8F0" }}
                 />
                 <YAxis type="category" dataKey="name" hide />
                 <Tooltip
@@ -707,53 +706,53 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
                       : "Collateral (Stressed)",
                   ]}
                   contentStyle={{
-                    backgroundColor: "#101e2a",
-                    border: "1px solid #213341",
-                    borderRadius: "6px",
-                    color: "#edf3f7",
-                    fontSize: "11px",
+                    backgroundColor: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "8px",
+                    color: "#0F172A",
+                    fontSize: "12px",
                     fontFamily: "var(--mono)",
+                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.08)",
                   }}
-                  cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+                  cursor={{ fill: "rgba(241, 245, 249, 0.6)" }}
                 />
-                {/* Vertical reference line at required amount */}
                 <ReferenceLine
                   x={250000}
-                  stroke="#ffffff"
+                  stroke="#1E293B"
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   label={{
                     value: "Req $250k",
                     position: "top",
-                    fill: "#f8fafc",
+                    fill: "#0F172A",
                     fontSize: 10,
                     fontWeight: 700,
                     fontFamily: "var(--mono)",
                   }}
                 />
-                {/* Stressed bar */}
                 <Bar
                   dataKey="stressedValue"
                   name="Value after shock"
                   stackId="bank"
                   fill={STATUS_COLORS.stressed}
                   animationDuration={500}
+                  radius={[0, 0, 0, 0]}
                 />
-                {/* Shortfall gap in RED */}
                 <Bar
                   dataKey="shortfallGap"
                   name="Shortfall Gap"
                   stackId="bank"
                   fill={STATUS_COLORS.shortfall}
                   animationDuration={500}
+                  radius={[0, 4, 4, 0]}
                 />
-                {/* Topped up bar in GREEN */}
                 <Bar
                   dataKey="coveredValue"
                   name="Collateral (Topped-up)"
                   stackId="bank"
                   fill={STATUS_COLORS.covered}
                   animationDuration={500}
+                  radius={[0, 4, 4, 0]}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -784,17 +783,17 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
                 layout="vertical"
                 data={ccpData}
                 margin={{ top: 12, right: 35, left: 10, bottom: 12 }}
-                barSize={26}
+                barSize={24}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f3342" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
                 <XAxis
                   type="number"
                   domain={[0, 330000]}
                   tickFormatter={(val: number) => `$${(val / 1000).toFixed(0)}k`}
-                  stroke="#8496a5"
-                  tick={{ fill: "#94a3b8", fontSize: 10, fontFamily: "var(--mono)" }}
-                  axisLine={{ stroke: "#213341" }}
-                  tickLine={{ stroke: "#213341" }}
+                  stroke="#94A3B8"
+                  tick={{ fill: "#64748B", fontSize: 10, fontFamily: "var(--mono)" }}
+                  axisLine={{ stroke: "#E2E8F0" }}
+                  tickLine={{ stroke: "#E2E8F0" }}
                 />
                 <YAxis type="category" dataKey="name" hide />
                 <Tooltip
@@ -807,53 +806,53 @@ export function StressBulletChart({ onTopUpApplied }: StressBulletChartProps) {
                       : "Collateral (Stressed)",
                   ]}
                   contentStyle={{
-                    backgroundColor: "#101e2a",
-                    border: "1px solid #213341",
-                    borderRadius: "6px",
-                    color: "#edf3f7",
-                    fontSize: "11px",
+                    backgroundColor: "#FFFFFF",
+                    border: "1px solid #E2E8F0",
+                    borderRadius: "8px",
+                    color: "#0F172A",
+                    fontSize: "12px",
                     fontFamily: "var(--mono)",
+                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.08)",
                   }}
-                  cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+                  cursor={{ fill: "rgba(241, 245, 249, 0.6)" }}
                 />
-                {/* Vertical reference line at required amount */}
                 <ReferenceLine
                   x={300000}
-                  stroke="#ffffff"
+                  stroke="#1E293B"
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   label={{
                     value: "Req $300k",
                     position: "top",
-                    fill: "#f8fafc",
+                    fill: "#0F172A",
                     fontSize: 10,
                     fontWeight: 700,
                     fontFamily: "var(--mono)",
                   }}
                 />
-                {/* Stressed bar */}
                 <Bar
                   dataKey="stressedValue"
                   name="Value after shock"
                   stackId="ccp"
                   fill={STATUS_COLORS.stressed}
                   animationDuration={500}
+                  radius={[0, 0, 0, 0]}
                 />
-                {/* Shortfall gap in RED */}
                 <Bar
                   dataKey="shortfallGap"
                   name="Shortfall Gap"
                   stackId="ccp"
                   fill={STATUS_COLORS.shortfall}
                   animationDuration={500}
+                  radius={[0, 4, 4, 0]}
                 />
-                {/* Topped up bar in GREEN */}
                 <Bar
                   dataKey="coveredValue"
                   name="Collateral (Topped-up)"
                   stackId="ccp"
                   fill={STATUS_COLORS.covered}
                   animationDuration={500}
+                  radius={[0, 4, 4, 0]}
                 />
               </BarChart>
             </ResponsiveContainer>
