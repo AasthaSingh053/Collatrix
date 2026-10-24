@@ -53,11 +53,11 @@ export interface DashboardData {
     total_funding_cost_cents: number;
     asset_usage: Record<string, number>;
   };
-  greedy: {
+  greedy?: {
     obligations: ObligationAllocation[];
     total_funding_cost_cents: number;
     asset_usage: Record<string, number>;
-  };
+  } | null;
   savings_cents: number;
   savings_bps: number;
   false_shortfall_scenario: {
@@ -93,4 +93,24 @@ export interface ChainReservation {
   reservationId: string;
   status: "active" | "released" | "expired" | "none";
   expiresAt?: number;
+}
+
+export interface AssetInput {
+  symbol: string;
+  unit_value_cents: number;
+  haircut_bps: number;
+  unit_cost_cents: number;
+  inventory: number;
+  eligible_obligations: string[];
+}
+
+export interface ObligationInput {
+  id: string;
+  name?: string;
+  requirement_cents: number;
+}
+
+export interface OptimizeRequest {
+  assets?: AssetInput[];
+  obligations?: ObligationInput[];
 }

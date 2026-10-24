@@ -255,12 +255,24 @@ def greedy_allocation(
     return _summarize(quantities, assets, obligations)
 
 
-def compare_allocations() -> dict:
-    optimized = optimize_allocation()
-    greedy = greedy_allocation()
-    savings_cents = greedy["total_funding_cost_cents"] - optimized["total_funding_cost_cents"]
-    greedy_cost = greedy["total_funding_cost_cents"]
-    savings_bps = (savings_cents * BASIS_POINTS + greedy_cost // 2) // greedy_cost if greedy_cost else 0
+def compare_allocations(
+    assets: tuple[Asset, ...] = ASSETS,
+    obligations: tuple[Obligation, ...] = OBLIGATIONS,
+) -> dict:
+    optimized = optimize_allocation(assets, obligations)
+    try:
+        greedy = greedy_allocation(assets, obligations)
+    except AllocationError:
+        greedy = None
+
+    if greedy is not None:
+        savings_cents = greedy["total_funding_cost_cents"] - optimized["total_funding_cost_cents"]
+        greedy_cost = greedy["total_funding_cost_cents"]
+        savings_bps = (savings_cents * BASIS_POINTS + greedy_cost // 2) // greedy_cost if greedy_cost else 0
+    else:
+        savings_cents = 0
+        savings_bps = 0
+
     return {
         "optimized": optimized,
         "greedy": greedy,

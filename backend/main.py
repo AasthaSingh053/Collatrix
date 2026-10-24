@@ -10,7 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
-from collatrix.optimizer import ASSETS, AllocationError, compare_allocations, false_shortfall_scenario
+from collatrix.optimizer import (
+    ASSETS,
+    OBLIGATIONS,
+    AllocationError,
+    Asset,
+    Obligation,
+    compare_allocations,
+    false_shortfall_scenario,
+)
 from collatrix.stress import run_stress_test
 
 
@@ -67,16 +75,38 @@ class OptimizationResponse(StrictModel):
     amount_unit: str
     assets: list[AssetResponse]
     optimized: AllocationPlan
-    greedy: AllocationPlan
+    greedy: AllocationPlan | None = None
     savings_cents: int
     savings_bps: int
     false_shortfall_scenario: FalseShortfallScenario
+
+
+class AssetInput(StrictModel):
+    symbol: str
+    unit_value_cents: int = Field(ge=1)
+    haircut_bps: int = Field(ge=0, lt=10_000)
+    unit_cost_cents: int = Field(ge=0)
+    inventory: int = Field(ge=0)
+    eligible_obligations: list[str] = Field(default_factory=list)
+
+
+class ObligationInput(StrictModel):
+    id: str
+    name: str = ""
+    requirement_cents: int = Field(ge=1)
+
+
+class OptimizeRequest(StrictModel):
+    assets: list[AssetInput] | None = None
+    obligations: list[ObligationInput] | None = None
 
 
 class StressRequest(StrictModel):
     shocks_bps: dict[str, StrictInt] = Field(
         default_factory=lambda: {"CASH": 0, "UST": -1_500, "CORP": -2_500}
     )
+    assets: list[AssetInput] | None = None
+    obligations: list[ObligationInput] | None = None
 
     @field_validator("shocks_bps")
     @classmethod
@@ -139,9 +169,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 DEPLOYMENT_PATH = Path(__file__).resolve().parents[1] / "chain" / "deployments" / "local.json"
@@ -191,7 +222,44 @@ def health() -> dict[str, str]:
     return {"status": "ok", "mode": "simulation"}
 
 
-def _optimization_response(comparison: dict) -> OptimizationResponse:
+def _resolve_portfolio(
+    assets_in: list[AssetInput] | None,
+    obligations_in: list[ObligationInput] | None,
+) -> tuple[tuple[Asset, ...], tuple[Obligation, ...]]:
+    assets = (
+        tuple(
+            Asset(
+                symbol=a.symbol,
+                unit_value_cents=a.unit_value_cents,
+                haircut_bps=a.haircut_bps,
+                unit_cost_cents=a.unit_cost_cents,
+                inventory=a.inventory,
+                eligible_obligations=tuple(a.eligible_obligations),
+            )
+            for a in assets_in
+        )
+        if assets_in is not None
+        else ASSETS
+    )
+    obligations = (
+        tuple(
+            Obligation(
+                obligation_id=o.id,
+                name=o.name or o.id,
+                requirement_cents=o.requirement_cents,
+            )
+            for o in obligations_in
+        )
+        if obligations_in is not None
+        else OBLIGATIONS
+    )
+    return assets, obligations
+
+
+def _optimization_response(
+    comparison: dict,
+    assets: tuple[Asset, ...] = ASSETS,
+) -> OptimizationResponse:
     return OptimizationResponse(
         mode="simulation",
         currency="USD",
@@ -206,7 +274,7 @@ def _optimization_response(comparison: dict) -> OptimizationResponse:
                 inventory=asset.inventory,
                 eligible_obligations=list(asset.eligible_obligations),
             )
-            for asset in ASSETS
+            for asset in assets
         ],
         false_shortfall_scenario=FalseShortfallScenario(**false_shortfall_scenario()),
         **comparison,
@@ -215,25 +283,51 @@ def _optimization_response(comparison: dict) -> OptimizationResponse:
 
 @app.get("/api/v1/optimize", response_model=OptimizationResponse)
 def optimize() -> OptimizationResponse:
-    return _optimization_response(compare_allocations())
+    return _optimization_response(compare_allocations(ASSETS, OBLIGATIONS), ASSETS)
+
+
+@app.post("/api/v1/optimize", response_model=OptimizationResponse)
+def optimize_custom(request: OptimizeRequest) -> OptimizationResponse:
+    assets, obligations = _resolve_portfolio(request.assets, request.obligations)
+    return _optimization_response(compare_allocations(assets, obligations), assets)
 
 
 @app.post("/api/v1/stress", response_model=StressResponse)
 def stress(request: StressRequest) -> StressResponse:
+    assets, obligations = _resolve_portfolio(request.assets, request.obligations)
+    comparison = compare_allocations(assets, obligations)
     return StressResponse(
         mode="simulation",
-        **run_stress_test(compare_allocations(), request.shocks_bps),
+        **run_stress_test(comparison, request.shocks_bps, assets, obligations),
     )
 
 
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
 def dashboard() -> DashboardResponse:
-    comparison = compare_allocations()
+    comparison = compare_allocations(ASSETS, OBLIGATIONS)
     return DashboardResponse(
-        **_optimization_response(comparison).model_dump(),
+        **_optimization_response(comparison, ASSETS).model_dump(),
         stress=StressResponse(
             mode="simulation",
-            **run_stress_test(comparison, {"CASH": 0, "UST": -1_500, "CORP": -2_500}),
+            **run_stress_test(comparison, {"CASH": 0, "UST": -1_500, "CORP": -2_500}, ASSETS, OBLIGATIONS),
+        ),
+    )
+
+
+@app.post("/api/v1/dashboard", response_model=DashboardResponse)
+def dashboard_custom(request: OptimizeRequest) -> DashboardResponse:
+    assets, obligations = _resolve_portfolio(request.assets, request.obligations)
+    comparison = compare_allocations(assets, obligations)
+    default_shocks = {a.symbol: 0 for a in assets}
+    if "UST" in default_shocks:
+        default_shocks["UST"] = -1_500
+    if "CORP" in default_shocks:
+        default_shocks["CORP"] = -2_500
+    return DashboardResponse(
+        **_optimization_response(comparison, assets).model_dump(),
+        stress=StressResponse(
+            mode="simulation",
+            **run_stress_test(comparison, default_shocks, assets, obligations),
         ),
     )
 
