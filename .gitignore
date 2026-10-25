@@ -16,3 +16,6 @@ coverage/
 dist/
 build/
 chain/deployments/
+.cache/
+.cache/
+
