@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserProvider,
   Contract,
@@ -313,6 +313,64 @@ export default function App() {
   const [newAcceptedAssets, setNewAcceptedAssets] = useState<string[]>(["CASH", "UST"]);
   const [activeNav, setActiveNav] = useState("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSidebarOpen(false);
+        setMobileSearchOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentY =
+            window.pageYOffset ||
+            document.documentElement.scrollTop ||
+            document.body.scrollTop ||
+            0;
+          const delta = currentY - lastScrollY.current;
+
+          // Always show when near the very top
+          if (currentY <= 25) {
+            setHeaderVisible(true);
+          }
+          // Scroll DOWN by > 6px -> hide header, close mobile search & drawer
+          else if (delta > 6 && currentY > 40) {
+            setHeaderVisible(false);
+            setSidebarOpen(false);
+            setMobileSearchOpen(false);
+          }
+          // Scroll UP by > 4px at ANY position (even at bottom of page) -> reveal header
+          else if (delta < -4) {
+            setHeaderVisible(true);
+          }
+
+          lastScrollY.current = Math.max(0, currentY);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    document.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   const appendActivity = useCallback((item: Activity) => {
     setActivity((current) => [item, ...current].slice(0, 16));
@@ -927,6 +985,7 @@ export default function App() {
 
   const scrollToSection = (id: string, navKey: string) => {
     setActiveNav(navKey);
+    setSidebarOpen(false);
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -946,13 +1005,80 @@ export default function App() {
 
   return (
     <div className="saas-layout">
-      {/* 1. Modern Left Sidebar Navigation */}
-      <aside className="sidebar">
+      {/* Backdrop overlay for sidebar (desktop & mobile) */}
+      <div
+        className={`sidebar-backdrop ${sidebarOpen ? "active" : ""}`}
+        onClick={() => setSidebarOpen(false)}
+        aria-hidden="true"
+      />
+
+      {/* 1. Modern Sidebar Drawer (Opened by Hamburger on Desktop & Mobile) */}
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} aria-label="Main Navigation">
         <div className="sidebar-brand">
-          <a className="brand-link" href="/" aria-label="Collatrix Home">
+          <a
+            className="brand-link"
+            href="/"
+            aria-label="Collatrix Home"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection("dashboard-top", "dashboard");
+            }}
+          >
             <span className="brand-icon-wrap">C</span>
             <span>collatrix<span className="brand-period">.</span></span>
           </a>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close navigation menu"
+            title="Close Menu (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Mobile-Only Header Tools Inside Hamburger Drawer */}
+        <div className="sidebar-mobile-tools">
+          <div className="sidebar-mobile-tool-group">
+            <span className="sidebar-mobile-tool-label">SYSTEM STATUS</span>
+            <div className="sidebar-mobile-status-row">
+              <span className={`status-badge-pill ${apiConnected === false ? "sim" : "online"}`}>
+                <span className="badge-pulse" />
+                <span className="status-badge-text">{apiConnected === false ? "LOCAL ENGINE" : "API ONLINE"}</span>
+              </span>
+              <span className="sidebar-mobile-status-sub">
+                {apiConnected ? "Backend Connected (8000)" : "Browser Sim Mode"}
+              </span>
+            </div>
+          </div>
+
+          <div className="sidebar-mobile-tool-group">
+            <span className="sidebar-mobile-tool-label">WALLET CONNECTION</span>
+            <button
+              type="button"
+              className="sidebar-mobile-wallet-btn"
+              onClick={() => {
+                setSidebarOpen(false);
+                openWalletModal();
+              }}
+            >
+              <div className="sidebar-wallet-btn-info">
+                <span className="wallet-dot" />
+                <div className="sidebar-wallet-btn-texts">
+                  <span className="sidebar-wallet-btn-addr">
+                    {walletAddress ? shortAddress(walletAddress) : "Connect wallet"}
+                  </span>
+                  <span className="sidebar-wallet-btn-sub">
+                    {walletAddress
+                      ? (signingMode === "wallet" ? "MetaMask" : connectedLocalRole || localRole)
+                      : "Click to choose wallet"}
+                  </span>
+                </div>
+              </div>
+              <span className="sidebar-wallet-arrow">›</span>
+            </button>
+          </div>
         </div>
 
         <nav className="sidebar-nav">
@@ -1047,13 +1173,45 @@ export default function App() {
       {/* 2. Main Workspace Layout */}
       <div className="main-wrapper">
         {/* Top Header & Action Bar */}
-        <header className="saas-header">
-          <div className="header-breadcrumbs">
-            <span>COLLATRIX</span>
-            <span className="crumb-sep">/</span>
-            <span>OPERATIONS</span>
-            <span className="crumb-sep">/</span>
-            <span className="crumb-current">DYNAMIC OPTIMIZATION DESK</span>
+        <header className={`saas-header${headerVisible ? "" : " header-hidden"}`}>
+          <div className="header-left">
+            <button
+              type="button"
+              className={`hamburger-btn ${sidebarOpen ? "active" : ""}`}
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-label="Toggle navigation menu"
+              aria-expanded={sidebarOpen}
+              title={sidebarOpen ? "Close menu" : "Open menu"}
+            >
+              <span className="hamburger-box">
+                <span className="hamburger-line" />
+                <span className="hamburger-line" />
+                <span className="hamburger-line" />
+              </span>
+            </button>
+
+            <div className="header-brand-wrap">
+              <a
+                className="brand-link"
+                href="/"
+                aria-label="Collatrix Home"
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollToSection("dashboard-top", "dashboard");
+                }}
+              >
+                <span className="brand-icon-wrap">C</span>
+                <span>collatrix<span className="brand-period">.</span></span>
+              </a>
+            </div>
+
+            <div className="header-breadcrumbs">
+              <span>COLLATRIX</span>
+              <span className="crumb-sep">/</span>
+              <span>OPERATIONS</span>
+              <span className="crumb-sep">/</span>
+              <span className="crumb-current">DYNAMIC OPTIMIZATION DESK</span>
+            </div>
           </div>
 
           <div className="header-center">
@@ -1072,16 +1230,16 @@ export default function App() {
           <div className="header-right">
             <span className={`status-badge-pill ${apiConnected === false ? "sim" : "online"}`}>
               <span className="badge-pulse" />
-              {apiConnected === false ? "LOCAL ENGINE" : "API ONLINE"}
+              <span className="status-badge-text">{apiConnected === false ? "LOCAL ENGINE" : "API ONLINE"}</span>
             </span>
 
             <button
-              className="wallet-pill-button"
+              className="wallet-pill-button desktop-wallet-pill"
               onClick={openWalletModal}
               title={walletAddress ? "Connected. Click to switch or disconnect wallet" : "Click to connect wallet"}
             >
               <span className="wallet-dot" />
-              <span>{walletAddress ? shortAddress(walletAddress) : "Connect wallet"}</span>
+              <span className="wallet-pill-address">{walletAddress ? shortAddress(walletAddress) : "Connect wallet"}</span>
               <span className="wallet-mode-tag">
                 {walletAddress
                   ? (signingMode === "wallet" ? "MetaMask" : connectedLocalRole || localRole)
@@ -1089,11 +1247,56 @@ export default function App() {
               </span>
             </button>
 
+            {/* Mobile Search Icon Button */}
+            <button
+              type="button"
+              className={`mobile-search-toggle-btn ${mobileSearchOpen ? "active" : ""}`}
+              onClick={() => setMobileSearchOpen((prev) => !prev)}
+              aria-label="Toggle search bar"
+              title="Search obligations, assets..."
+            >
+              <span>🔍</span>
+            </button>
+
             <div className="user-profile-avatar" title="Desk Trader / Risk Manager">
               <span>RM</span>
             </div>
           </div>
         </header>
+
+        {/* Mobile Search Dropdown Bar */}
+        {mobileSearchOpen && (
+          <div className="mobile-search-bar animate-slide-down">
+            <div className="mobile-search-pill">
+              <span className="search-icon">🔍</span>
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search obligations, assets, counterparties..."
+                className="search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="mobile-search-clear"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className="mobile-search-cancel"
+              onClick={() => setMobileSearchOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
         {/* Dashboard Body */}
         <main className="dashboard-body" id="dashboard-top">
@@ -1231,7 +1434,7 @@ export default function App() {
                         const pending = pendingObligation === obligation.id;
                         return (
                           <tr key={obligation.id}>
-                            <td>
+                            <td data-label="Obligation">
                               <span className="obligation-name">{obligation.name}</span>
                               <span className="table-subtext">{obligation.id}</span>
                               <span className="table-subtext">
@@ -1241,7 +1444,7 @@ export default function App() {
                                   .join(" · ") || "none"}
                               </span>
                             </td>
-                            <td>
+                            <td data-label="Requirement">
                               <div className="obligation-edit-row">
                                 <span>$</span>
                                 <input
@@ -1258,7 +1461,7 @@ export default function App() {
                               </div>
                               <span className="table-subtext">{dollars(obligation.credited_collateral_cents)} credited</span>
                             </td>
-                            <td>
+                            <td data-label="Collateral">
                               <div className="collateral-lines">
                                 {obligation.allocations.map((line) => (
                                   <div className="allocation-explanation" key={line.asset}>
@@ -1268,10 +1471,10 @@ export default function App() {
                                 ))}
                               </div>
                             </td>
-                            <td className="numeric font-mono" style={{ fontWeight: 700 }}>
+                            <td data-label="Funding Cost" className="numeric font-mono" style={{ fontWeight: 700 }}>
                               {dollars(obligation.funding_cost_cents)}
                             </td>
-                            <td>
+                            <td data-label="Reservation">
                               <div className="reservation-cell">
                                 <span className={`status-pill ${isActive ? "status-active" : "status-idle"}`}>
                                   <span className="status-pill-dot" />
@@ -1567,8 +1770,8 @@ export default function App() {
 
           {/* Footer */}
           <footer className="page-footer">
-            <span>COLLATRIX · ENTERPRISE COLLATERAL DESK · VERIFIABLE SAAS PROTOTYPE</span>
-            <span>WHOLE-UNIT OPTIMIZATION · LOCAL EVM NODE · NOT A FINANCIAL TRANSACTION</span>
+            <span className="footer-full-text">COLLATRIX · ENTERPRISE COLLATERAL DESK · VERIFIABLE SAAS PROTOTYPE · LOCAL EVM NODE</span>
+            <span className="footer-mobile-text">COLLATRIX · COLLATERAL DESK · EVM NODE</span>
           </footer>
         </main>
       </div>
